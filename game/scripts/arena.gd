@@ -309,11 +309,11 @@ func _floor_and_walls() -> void:
 	var carpet := ShaderMaterial.new()
 	carpet.shader = Shader.new()
 	carpet.shader.code = CARPET_SHADER
-	_solid(Vector3(HALF_W * 2.0, 1.0, APPROACH + 6.0), Vector3(0, -0.5, APPROACH * 0.5 + 3.0), carpet, 1.0)
+	_solid(Vector3(HALF_W * 2.0, 1.0, APPROACH + 10.0), Vector3(0, -0.5, APPROACH * 0.5 + 5.0), carpet, 1.0)
 	_solid(Vector3(HALF_W * 2.0, 0.02, 0.12), Vector3(0, 0.005, -0.06), Look.neon(Color("ff2d55"), 4.0))  # foul line
 	var wall := Look.toy(Color("1b0f3a"), 0.8, false)
-	var depth := APPROACH + LANE_LEN + 3.0
-	var mid_z := (APPROACH - LANE_LEN - 3.0) * 0.5
+	var depth := APPROACH + LANE_LEN + 13.0  # runs past the camera, which sits behind the back rail
+	var mid_z := (APPROACH + 10.0 - LANE_LEN - 3.0) * 0.5
 	for s in [-1.0, 1.0]:
 		_solid(Vector3(0.6, 7.0, depth), Vector3(s * (HALF_W + 0.3), 3.0, mid_z), wall)
 		Look.mesh(self, Look.box(Vector3(0.08, 0.08, depth)), Look.neon(Color("ff3fb4") if s < 0 else Color("2de2ff")),
@@ -322,7 +322,7 @@ func _floor_and_walls() -> void:
 	var back := BoxShape3D.new()
 	back.size = Vector3(HALF_W * 2.0, 8.0, 0.6)
 	_body(back, Vector3(0, 3.5, APPROACH + 0.3))
-	Look.mesh(self, Look.box(Vector3(HALF_W * 2.0, 0.08, 0.08)), Look.neon(Color("ffe14d"), 3.0), Vector3(0, 1.1, APPROACH))
+	Look.mesh(self, Look.box(Vector3(HALF_W * 2.0, 0.08, 0.08)), Look.neon(Color("ffe14d"), 1.2), Vector3(0, 1.1, APPROACH))
 	for x in range(-8, 9, 2):
 		Look.mesh(self, Look.box(Vector3(0.06, 1.1, 0.06)), wall, Vector3(x, 0.55, APPROACH))
 	_solid(Vector3(HALF_W * 2.0, 7.0, 0.6), Vector3(0, 2.0, -LANE_LEN - 3.3), Look.toy(Color("07040f"), 1.0, false))

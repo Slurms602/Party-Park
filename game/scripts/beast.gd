@@ -125,7 +125,9 @@ func sim(inp: Dictionary, dt: float) -> void:
 		DIVE: _sim_dive(dt)
 		BALL, CARRIED: _sim_ball(inp, dt)
 	_prev = inp
-	if global_position.y < -12.0 or absf(global_position.x) > 30.0 or absf(global_position.z) > 40.0:
+	if global_position.z < -Arena.LANE_LEN and global_position.y < Arena.PIT_Y + 1.0 and state != CARRIED:
+		_respawn(arena.ball_return_point(global_position.x), Vector3(0, 3.0, 3.5))  # out of the pit via the ball return
+	elif global_position.y < -12.0 or absf(global_position.x) > 30.0 or absf(global_position.z) > 40.0:
 		_respawn(arena.spawn_point(randi() % 8))
 
 
@@ -239,7 +241,7 @@ func _punch(heavy: bool, power: float) -> void:
 			body.apply_central_impulse((dir + Vector3.UP * 0.3) * force * 0.25)
 			hit = true
 	apply_central_impulse(f * (1.6 if heavy else 0.6) * mass)  # punches carry you forward a bit
-	fx.emit(("smack" if heavy else "punch") if hit else "whiff", global_position, 0.0 if hit else -8.0)
+	fx.emit(("smack" if heavy else "punch") if hit else "whiff", global_position + Vector3.UP * 0.3 + f * reach * 0.8, 0.0 if hit else -8.0)
 
 
 func take_hit(by: int, dir: Vector3, dmg: float, force: float, heavy := false) -> void:
@@ -299,7 +301,7 @@ func _on_body_entered(other: Node) -> void:
 			_dive_hits.append(other)
 			var k := clampf((rel - 3.0) / 6.0, 0.0, 1.0)
 			other.take_hit(pid, linear_velocity.normalized(), lerpf(15.0, 35.0, k), lerpf(4.0, 10.0, k), k > 0.5)
-			fx.emit("smack", global_position, 0.0)
+			fx.emit("smack", (global_position + other.global_position) * 0.5, 0.0)
 		elif state == BALL and projectile_t > 0.0 and rel > 3.5 and other.immune <= 0.0:
 			# Super Battle Golf's swing projectile: a launched ball flattens anyone in its path.
 			other.take_hit(last_toucher, linear_velocity.normalized(), 45.0, 9.0, true)
@@ -440,9 +442,6 @@ func _sim_ball(inp: Dictionary, dt: float) -> void:
 			carrier.release_hold(Vector3.UP * 3.0)
 			carrier.stagger = 0.5
 			_wake()
-		return
-	if global_position.z < -Arena.LANE_LEN and global_position.y < Arena.PIT_Y + 1.0:
-		_respawn(arena.ball_return_point(global_position.x), Vector3(0, 3.0, 3.5))
 		return
 	if ko_time <= 0.0 and projectile_t <= 0.0 and linear_velocity.length() < 2.0:
 		_wake()

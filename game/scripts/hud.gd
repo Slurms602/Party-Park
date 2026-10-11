@@ -13,6 +13,7 @@ var _charge: ProgressBar
 var _hint: Label
 var _pause: PanelContainer
 var _results: PanelContainer
+var _flash: ColorRect
 
 
 func _ready() -> void:
@@ -20,6 +21,12 @@ func _ready() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+
+	_flash = ColorRect.new()
+	_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_flash.color = Color(1, 1, 1, 0)
+	root.add_child(_flash)
 
 	_clock = _label(root, 54, Color("2de2ff"))
 	_clock.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
@@ -88,6 +95,11 @@ func set_me(health: float, charge: float, balled: bool, carrying: bool) -> void:
 	_charge.value = maxf(charge, 0.0) * 100.0
 	_hint.text = "MASH BUTTONS TO WAKE UP!" if balled else \
 		"Hold LMB, then release to BOWL!" if carrying else ""
+
+
+func impact() -> void:
+	_flash.color = Color(1, 0.95, 0.8, 0.35)
+	_flash.create_tween().tween_property(_flash, "color:a", 0.0, 0.12)
 
 
 func feed(text: String, col: Color) -> void:

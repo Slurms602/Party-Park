@@ -248,8 +248,10 @@ func _field(parent: Node, placeholder: String, value: String) -> LineEdit:
 
 func _run_args() -> void:
 	if _args.has("timescale"):
+		# Scale the tick rate too, so each physics step stays 1/60 s (big steps make bodies tunnel).
 		Engine.time_scale = float(_args.timescale)
-		Engine.max_physics_steps_per_frame = 64  # let slow (software-rendered) test runs keep up
+		Engine.physics_ticks_per_second = int(60 * Engine.time_scale)
+		Engine.max_physics_steps_per_frame = 64
 	if _args.has("host"):
 		_act(Net.host(_args.get("name", "Host")))
 		for i in int(_args.get("bots", "0")):

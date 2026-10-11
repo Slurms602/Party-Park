@@ -233,9 +233,43 @@ func _snap_pins(t: float, pins: PackedByteArray) -> void:
 @rpc("authority", "call_local", "unreliable")
 func _ev_fx(clip: String, pos: Vector3, vol: float) -> void:
 	Sfx.play(clip, pos, vol)
+	var near := clampf(1.0 - pos.distance_to(cam.global_position) / 30.0, 0.0, 1.0)
 	if clip in ["smack", "pins", "ko"]:
-		var d := pos.distance_to(cam.global_position)
-		_shake = maxf(_shake, clampf(0.35 - d * 0.012, 0.0, 0.35) * (1.5 if clip == "smack" else 1.0))
+		_shake = maxf(_shake, 0.25 * near * (1.5 if clip == "smack" else 1.0))
+	match clip:
+		"punch": _burst(pos, Color("fff3b0"), 10, 3.0)
+		"smack":
+			_burst(pos, Color("ffe14d"), 24, 6.0)
+			if near > 0.5:
+				hud.impact()  # Super Battle Golf-style impact frame on big hits near you
+		"pins": _burst(pos + Vector3(0, 0.6, -1.0), Color.WHITE, 30, 5.0)
+		"ko": _burst(pos + Vector3.UP * 0.8, Color("ffe14d"), 16, 2.5)
+
+
+func _burst(pos: Vector3, col: Color, amount: int, speed: float) -> void:
+	var p := CPUParticles3D.new()
+	var dot := SphereMesh.new()
+	dot.radius = 0.06
+	dot.height = 0.12
+	dot.radial_segments = 6
+	dot.rings = 3
+	p.mesh = dot
+	p.material_override = Look.neon(col, 4.0)
+	p.one_shot = true
+	p.explosiveness = 1.0
+	p.amount = amount
+	p.lifetime = 0.45
+	p.direction = Vector3.UP
+	p.spread = 180.0
+	p.initial_velocity_min = speed * 0.5
+	p.initial_velocity_max = speed
+	p.gravity = Vector3(0, -9.8, 0)
+	p.scale_amount_min = 0.6
+	p.scale_amount_max = 1.4
+	add_child(p)
+	p.global_position = pos
+	p.emitting = true
+	p.finished.connect(p.queue_free)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -356,6 +390,7 @@ func _update_camera(dt: float, me: Beast) -> void:
 		focus = me.global_position
 	# Low and behind, looking down the lanes so you can always see the pins.
 	var want := focus + Vector3(0, 6.5, 9.0)
+	want.x = clampf(want.x, -Arena.HALF_W + 3.5, Arena.HALF_W - 3.5)  # don't peek outside the alley
 	cam.global_position = cam.global_position.lerp(want, 1.0 - exp(-dt * (2.5 if _follow else 5.0)))
 	cam.look_at(cam.global_position + Vector3(0, -6.5, -14.0).normalized())
 	_shake = maxf(_shake - dt * 1.2, 0.0)
