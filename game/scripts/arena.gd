@@ -4,6 +4,7 @@ extends Node3D
 ## Other maps extend this and override the size values and the _environment/_floor_and_walls/_decor look.
 
 signal roll_finished(lane: int, bowler: int, knocked: int, kind: String)
+signal bumpers_changed(lane: int, on: bool)
 
 const MAPS := {classic = "COSMIC LANES", sunset = "SUNSET LANES"}  # id -> name in the lobby
 const APPROACH := 12.0
@@ -149,7 +150,30 @@ func ball_return_point(x: float) -> Vector3:
 
 func server_update(dt: float, beasts: Array) -> void:
 	for lane in lanes:
+		if lane.bumpers and lane.ball == null:
+			lane.bumper_t -= dt
+			if lane.bumper_t <= 0.0:  # the BUMPERS bowl never reached the pins
+				set_bumpers(lane.i, false)
 		_update_lane(lane, dt, beasts)
+
+
+func set_bumpers(i: int, on: bool) -> void:
+	## BUMPERS item: rails rise out of both gutters for one roll.
+	var lane: Dictionary = lanes[i]
+	if lane.bumpers == on:
+		return
+	lane.bumpers = on
+	lane.bumper_t = 6.0
+	if lane.rails.is_empty():
+		for s in [-1.0, 1.0]:
+			var x: float = lane_x(i) + s * (lane_w + gutter_w) * 0.5
+			var rail := _solid(Vector3(gutter_w, 0.7, lane_len - 1.0), Vector3(x, -0.8, -lane_len * 0.5 - 0.5), Look.neon(Color("ff8c2a"), 1.2), 0.3)
+			rail.collision_layer = 0
+			lane.rails.append(rail)
+	for rail: StaticBody3D in lane.rails:
+		rail.collision_layer = 1 if on else 0
+		create_tween().tween_property(rail, "position:y", 0.15 if on else -0.8, 0.35).set_trans(Tween.TRANS_BACK)
+	bumpers_changed.emit(i, on)
 
 
 func _update_lane(lane: Dictionary, dt: float, beasts: Array) -> void:
@@ -163,6 +187,7 @@ func _update_lane(lane: Dictionary, dt: float, beasts: Array) -> void:
 					and b.projectile_t > 0.0 and standing(lane) > 0:  # bowled (or punted hard) down the lane
 				lane.ball = b
 				lane.foul = b.foul
+				lane.golden = b.golden
 				lane.bowler = b.last_toucher
 				lane.before = standing(lane)
 				lane.t = 0.0
@@ -202,6 +227,8 @@ func _finish_roll(lane: Dictionary) -> void:
 		kind = "gutter"
 	lane.ball = null
 	lane.rerack = RERACK_FULL if left == 0 else RERACK_PARTIAL
+	if lane.bumpers:
+		set_bumpers(lane.i, false)
 	roll_finished.emit(lane.i, lane.bowler, knocked, kind)
 
 
@@ -354,7 +381,7 @@ func _floor_and_walls() -> void:
 	carpet.shader.code = CARPET_SHADER
 	_solid(Vector3(half_w * 2.0, 1.0, APPROACH + 10.0), Vector3(0, -0.5, APPROACH * 0.5 + 5.0), carpet, 1.0)
 	_foul_mat = Look.neon(Color("ff2d55"), 4.0)
-	_solid(Vector3(half_w * 2.0, 0.02, 0.12), Vector3(0, 0.005, -0.06), _foul_mat)  # foul line
+	Look.mesh(self, Look.box(Vector3(half_w * 2.0, 0.02, 0.12)), _foul_mat, Vector3(0, 0.005, -0.06))  # foul line: paint, not a bump
 	var wall := Look.toy(Color("1b0f3a"), 0.8, false)
 	var depth := APPROACH + lane_len + 13.0  # runs past the camera, which sits behind the back rail
 	var mid_z := (APPROACH + 10.0 - lane_len - 3.0) * 0.5
@@ -397,7 +424,8 @@ func _lane(i: int) -> void:
 	light.light_energy = 2.2
 	light.light_color = style.deck_light
 	add_child(light)
-	var lane := {i = i, pins = [], rack = [], ball = null, bowler = 0, before = 10, t = 0.0, done_t = 0.0, rerack = -1.0, racking = false, foul = false}
+	var lane := {i = i, pins = [], rack = [], ball = null, bowler = 0, before = 10, t = 0.0, done_t = 0.0, rerack = -1.0, racking = false, foul = false, golden = false,
+		bumpers = false, bumper_t = 0.0, rails = []}
 	var pin_mesh := Arena.pin_mesh()
 	for row in 4:
 		for k in row + 1:

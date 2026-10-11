@@ -497,7 +497,7 @@ func pose(dt: float, p: Dictionary) -> void:
 		var grow := 1.0
 		if charging_hand:
 			grow += p.get("charge", 0.0) * 0.6 + (sin(t * 30.0) * 0.12 if p.get("charge", 0.0) >= 1.0 else 0.0)
-		_fists[h].scale = Vector3.ONE * grow
+		_fists[h].scale = Vector3.ONE * grow * (1.7 if p.get("big", false) else 1.0)
 		var ft := Vector3(s * 0.2, -0.78 + maxf(0.0, cos(_phase + h * PI)) * 0.14 * walk, sin(_phase + h * PI) * 0.32 * walk)
 		if balled:
 			ft = Vector3(s * 0.25, -0.38, 0.1)

@@ -7,6 +7,7 @@ signal knocked_out(victim: Beast, by: int)
 signal flattened(by: int, victim: Beast)  # a bowled ball ran someone over
 signal fx(clip: String, pos: Vector3, volume_db: float)
 signal hurt(victim: Beast, by: int, dir: Vector3, power: float, label: String)  # drives hit reactions on every peer
+signal threw(by: Beast, pos: Vector3, vel: Vector3)  # a BOWLING BALL item left our hands
 
 enum { STAND, DIVE, BALL, CARRIED }
 
@@ -39,6 +40,10 @@ var net_holding := false  # clients only know *that* we hold something
 var net_carrying := false  # ...and whether it's a ball
 var immune := 0.0
 var leader := false
+var item := ""  # Powerups.KINDS id, "" for none
+var item_t := 0.0  # seconds left before it expires
+var item_uses := 0  # GIANT PIN swings left
+var golden := false  # bowled with GOLDEN BALL: this roll scores double
 
 # Host-only
 var held_by: Beast = null
@@ -85,6 +90,10 @@ var _crown: Node3D
 var _label: Label3D
 var _marker: Node3D  # bouncing GRAB! arrow over a downed player
 var _bar: MeshInstance3D
+var _item_label: Label3D
+var _held_ball: Node3D
+var _giant_pin: MeshInstance3D
+var _gold: MeshInstance3D
 var _last_pos := Vector3.ZERO
 var _speed := 0.0
 
@@ -145,6 +154,10 @@ func sim(inp: Dictionary, dt: float) -> void:
 	immune = maxf(immune - dt, 0.0)
 	projectile_t = maxf(projectile_t - dt, 0.0)
 	since_hit += dt
+	if item != "":
+		item_t -= dt
+		if item_t <= 0.0:
+			item = ""
 	_ground_check()
 	match state:
 		STAND: _sim_stand(inp, dt)
@@ -178,7 +191,7 @@ func _sim_stand(inp: Dictionary, dt: float) -> void:
 	var move: Vector2 = inp.get("move", Vector2.ZERO).limit_length(1.0)
 	if move.length() > 0.15:
 		facing = atan2(-move.x, -move.y)
-	var speed := SPEED * (0.5 if charging else 1.0) * (0.9 if holding is Beast else 1.0)
+	var speed := SPEED * (0.5 if charging else 1.0) * (0.9 if holding is Beast else 1.0) * (1.4 if item == "shoes" else 1.0)
 	var hv := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
 	var traction := (0.22 if _on_oil else 1.0) if _grounded else 0.3
 	apply_central_force(((Vector3(move.x, 0.0, move.y) * speed - hv) * 10.0 * traction).limit_length(60.0) * mass)
@@ -215,6 +228,8 @@ func _sim_stand(inp: Dictionary, dt: float) -> void:
 				_bowl(power)
 			elif holding is Beast:
 				_throw_held(power)
+			elif item == "ball":
+				_throw_ball(power)
 			elif charge < 0.2:
 				_jab_buffer = 0.18  # fires as soon as the previous punch recovers
 			else:
@@ -263,7 +278,10 @@ func _start_attack(heavy: bool, power: float) -> void:
 		gap = clampf(to.length() - 1.1, 0.0, 1.6)
 	# Step into the punch so it connects at full extension.
 	apply_central_impulse(_forward() * ((2.2 if heavy else 1.0) + gap * 2.2) * mass)
-	_atk = {t = 0.0, heavy = heavy, power = power, club = holding != null and holding.is_in_group("pins"), hit = []}
+	var giant := item == "giant_pin" and holding == null
+	if giant:
+		item_uses -= 1
+	_atk = {t = 0.0, heavy = heavy, power = power, club = holding != null and holding.is_in_group("pins"), giant = giant, hit = []}
 
 
 func _update_attack(dt: float) -> void:
@@ -274,10 +292,10 @@ func _update_attack(dt: float) -> void:
 	var t1 := 0.2 if _atk.heavy else 0.15
 	if _atk.t >= t0 and _atk.t <= t1:
 		var f := _forward()
-		var reach := 0.9 + (0.5 if _atk.club else 0.0) + (0.2 if _atk.heavy else 0.0)
+		var reach := 0.9 + (0.5 if _atk.club else 0.0) + (0.2 if _atk.heavy else 0.0) + (0.9 if _atk.giant else 0.0)
 		var ext := clampf((_atk.t - t0) / (t1 - t0), 0.0, 1.0)
 		var center := global_position + Vector3.UP * 0.3 + f * (0.45 + reach * ext * 0.8)
-		for body in _overlap(center, 0.62 if _atk.heavy else 0.5):
+		for body in _overlap(center, 0.8 if _atk.giant else 0.62 if _atk.heavy else 0.5):
 			if body == holding or _atk.hit.has(body):
 				continue
 			if not _atk.heavy and _atk.hit.any(func(x): return x is Beast) and body is Beast:
@@ -287,6 +305,8 @@ func _update_attack(dt: float) -> void:
 	if _atk.t > t1:
 		if _atk.hit.is_empty():
 			fx.emit("whiff", global_position + _forward(), -8.0)
+		if _atk.giant and item_uses <= 0:
+			item = ""
 		_atk.clear()
 
 
@@ -331,6 +351,15 @@ func _land(body: Node3D, f: Vector3) -> void:
 			label = "x2"
 	if _atk.club:
 		dmg *= 1.4
+		force *= 1.3
+	if _atk.giant:  # every GIANT PIN swing hits like a full-charge smash
+		dmg = maxf(dmg, 42.0)
+		force = maxf(force, 15.0)
+		lift = 0.55
+		down = maxf(down, 1.2)
+		label = "BONK!"
+	if item == "gloves":
+		dmg *= 1.5
 		force *= 1.3
 	b.take_hit(pid, dir, dmg, force, lift, down, label)
 	fx.emit("smack" if down > 0.0 else "punch", at, 0.0)
@@ -449,6 +478,8 @@ func _try_grab() -> void:
 			best.state = CARRIED
 			best.freeze = true
 			best.last_toucher = pid
+			if item == "sticky":
+				item_t = minf(item_t, 8.0)  # they can't wake up in your arms, for up to 8 s
 	else:
 		best.freeze = true
 	fx.emit("thud", global_position, -4.0)
@@ -492,6 +523,8 @@ func release_hold(throw_v := Vector3.ZERO) -> void:
 		if h.state == CARRIED:
 			h.state = BALL
 			h.freeze = false
+			if item == "sticky":
+				item = ""
 	else:
 		h.freeze = false
 	h.linear_velocity = linear_velocity + throw_v
@@ -511,8 +544,24 @@ func _bowl(power: float) -> void:
 	ball.projectile_t = 4.0
 	ball.last_toucher = pid
 	ball.foul = global_position.z < 0.0  # bowling from past the foul line scores nothing
+	ball.golden = item == "golden"
+	if item in ["golden", "bumpers"]:
+		if item == "bumpers" and lane >= 0:
+			arena.set_bumpers(lane, true)
+		item = ""
 	apply_central_impulse(-f * 1.0 * mass)
 	fx.emit("bowl", global_position, 2.0)
+
+
+func _throw_ball(power: float) -> void:
+	item = ""
+	var f := _forward()
+	var target := _nearest(14.0, 0.8)  # a little help toward whoever you're facing
+	if target:
+		f = f.lerp(((target.global_position - global_position) * Vector3(1, 0, 1)).normalized(), 0.6).normalized()
+	threw.emit(self, global_position + f * 0.9 + Vector3.UP * 0.35, f * lerpf(12.0, 20.0, power) + Vector3.UP * lerpf(2.5, 1.2, power))
+	apply_central_impulse(-f * 1.5 * mass)
+	fx.emit("bowl", global_position, 0.0)
 
 
 func _throw_held(power: float) -> void:
@@ -545,6 +594,8 @@ func go_ball(by: int) -> void:
 
 
 func _sim_ball(inp: Dictionary, dt: float) -> void:
+	if state == CARRIED and held_by != null and held_by.item == "sticky":
+		return  # STICKY GRIP: the wake-up clock stops while they carry you
 	for k in ["punch", "jump", "grab", "dive"]:
 		if _pressed(inp, k):
 			ko_time -= 0.12  # mash to wake up sooner (Gang Beasts ReviveCheck)
@@ -570,6 +621,7 @@ func _wake() -> void:
 	immune = IMMUNE_TIME
 	last_toucher = 0
 	projectile_t = 0.0
+	golden = false
 	freeze = false
 	_set_ball_shape(false)
 	global_transform = Transform3D(Basis(Vector3.UP, facing), global_position + Vector3.UP * 0.5)
@@ -697,6 +749,24 @@ func _build_visuals() -> void:
 	grab.modulate = Color("ffe14d")
 	grab.position.y = 0.32
 	_marker.add_child(grab)
+	# Items: a tag over your head so everyone knows what you've got, plus the held ball / giant pin.
+	_item_label = Label3D.new()
+	_item_label.font = Look.font(true)
+	_item_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_item_label.no_depth_test = true
+	_item_label.font_size = 34
+	_item_label.outline_size = 12
+	_item_label.pixel_size = 0.005
+	_item_label.position.y = 1.72
+	_overlay.add_child(_item_label)
+	_held_ball = Powerups.ball_visual()
+	_overlay.add_child(_held_ball)
+	_giant_pin = Look.mesh(_overlay, Arena.pin_mesh(), Arena.pin_material())
+	var gm := StandardMaterial3D.new()
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	gm.albedo_color = Color(1.0, 0.8, 0.2, 0.25)
+	_gold = Look.mesh(_overlay, Look.sphere(0.8), gm)
 	_last_pos = global_position
 
 
@@ -705,9 +775,10 @@ func _process(dt: float) -> void:
 	_last_pos = global_position
 	_speed = lerpf(_speed, Vector2(v.x, v.z).length(), 1.0 - exp(-dt * 10.0))
 	var balled := state >= BALL
-	_model.pose(dt, {speed = _speed, balled = balled, holding = holding != null or net_holding, reaching = reaching,
+	var has_ball := item == "ball" and not balled
+	_model.pose(dt, {speed = _speed, balled = balled, holding = holding != null or net_holding or has_ball, reaching = reaching,
 		charging = charging, charge = charge / FULL_CHARGE, punch = [punch_t[0] / PUNCH_TIME, punch_t[1] / PUNCH_TIME],
-		hand = _punch_hand, low = health < 25.0 and not balled})
+		hand = _punch_hand, low = health < 25.0 and not balled, big = item == "gloves"})
 
 	# The overlay stays upright even while the body rolls around.
 	_overlay.global_position = global_position
@@ -728,6 +799,20 @@ func _process(dt: float) -> void:
 	if _overlay.has_meta("ring"):
 		_overlay.get_meta("ring").visible = not balled
 	_marker.position.y = 1.55 + absf(sin(t * 5.0)) * 0.2
+	var kind: Dictionary = Powerups.KINDS.get(item, {})
+	_item_label.visible = not kind.is_empty() and not balled
+	if _item_label.visible:
+		_item_label.text = kind.name
+		_item_label.modulate = kind.color
+	var f := _forward()
+	_held_ball.visible = has_ball
+	_held_ball.position = f * -0.3 + Vector3.UP * 0.85 if charging else f * 0.75 + Vector3.UP * 0.35  # wound up overhead
+	_giant_pin.visible = item == "giant_pin" and not balled
+	if _giant_pin.visible:  # carried over the shoulder, swung down on each punch
+		var swing := sin(PI * maxf(punch_t[0], punch_t[1]) / PUNCH_TIME)
+		_giant_pin.transform = Transform3D(Basis(Vector3.UP.cross(f).normalized(), 0.3 + swing * 1.3).scaled(Vector3.ONE * 1.8),
+			f * 0.4 + Vector3.UP * 0.1)
+	_gold.visible = golden or (item == "golden" and not balled)
 
 
 func mark_local() -> void:

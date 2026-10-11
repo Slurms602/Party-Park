@@ -41,8 +41,9 @@ static func think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 	if ball_id != m.get("ball_id", 0) or (m.reroll <= 0.0 and not m.get("wants", false)):
 		m.ball_id = ball_id
 		var mine := ball != null and ball.ko_by == b.pid  # you knocked them out, you bowl them
+		var far := ball != null and ball.global_position.z < -6.0  # a long carry back from the pins rarely pays off
 		m.notice = randf_range(0.4, 0.9) if mine else randf_range(0.8, 1.7)
-		m.wants = randf() < (0.85 if mine else 0.3)
+		m.wants = randf() < (0.85 if mine else 0.3) * (0.4 if far else 1.0)
 		m.reroll = randf_range(2.0, 3.5)
 		m.grab_wait = randf_range(0.3, 0.7)
 	m.notice -= dt
@@ -53,21 +54,40 @@ static func think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 			m.grab_wait -= dt
 			inp.grab = m.grab_wait <= 0.0
 		return inp
+
+	# Item boxes on the back floor: worth a detour when we have nothing and nobody is in our face.
+	if b.item == "":
+		var box := _nearest_box(b, 12.0)
+		if box and (m.get("target") == null or not is_instance_valid(m.target)
+				or m.target.global_position.distance_to(pos) > 3.0 or box.global_position.distance_to(pos) < 3.0):
+			var to := box.global_position - pos
+			inp.move = Vector2(to.x, to.z).normalized()
+			return inp
 	return _fight(b, m, inp, dt, 1.5)
 
 
 static func _fight(b: Beast, m: Dictionary, inp: Dictionary, dt: float, reach: float) -> Dictionary:
 	if m.get("retarget", 0.0) <= 0.0 or not is_instance_valid(m.get("target")):
-		m.target = _nearest(b, func(o: Beast): return o.state <= Beast.DIVE and o.immune <= 0.0, 30.0)
+		# Fight where the bowling happens: don't chase people down the lanes unless they're right here.
+		var pos := b.global_position
+		m.target = _nearest(b, func(o: Beast): return o.state <= Beast.DIVE and o.immune <= 0.0 and (o.global_position.z > -1.5 or o.global_position.distance_to(pos) < 3.0), 30.0)
 		m.retarget = randf_range(0.6, 1.5)
 	m.retarget -= dt
 	var target = m.target
 	if target == null or not is_instance_valid(target):
-		inp.move = Vector2(sin(m.t * 0.7), cos(m.t * 0.5)) * 0.6
+		var home := Vector3(sin(m.t * 0.4) * 5.0, 0.0, 6.0) - b.global_position  # mill about the back floor
+		inp.move = Vector2(home.x, home.z).limit_length(1.0) * 0.6
 		return inp
 	var to: Vector3 = target.global_position - b.global_position
 	var d := Vector2(to.x, to.z).length()
 	inp.move = Vector2(to.x, to.z).normalized() * (1.0 if d > reach * 0.8 else 0.25)
+	if b.item == "ball" and d > 3.0 and d < 10.0:  # wind up and throw the bowling ball from range
+		inp.move *= 0.2
+		m.throw = m.get("throw", 0.0) + dt
+		inp.punch = m.throw < 0.5
+		if m.throw > 0.6:
+			m.throw = 0.0
+		return inp
 	if d > 2.5 and d < 5.0 and randf() < dt * 0.25:
 		inp.dive = true
 	if randf() < dt * 0.15:
@@ -93,6 +113,16 @@ static func _nearest(b: Beast, ok: Callable, max_d: float) -> Beast:
 		var d := o.global_position.distance_to(b.global_position)
 		if o != b and d < max_d and ok.call(o):
 			best = o
+			max_d = d
+	return best
+
+
+static func _nearest_box(b: Beast, max_d: float) -> Node3D:
+	var best: Node3D = null
+	for box: Node3D in b.get_tree().get_nodes_in_group("item_boxes"):
+		var d := box.global_position.distance_to(b.global_position)
+		if box.visible and d < max_d:
+			best = box
 			max_d = d
 	return best
 

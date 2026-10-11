@@ -13,6 +13,7 @@ const PRE_GAME := 3.0  # 3, 2, 1, BOWL! (Super Battle Golf's tee-off countdown)
 const HURRY_AT := 30.0  # switch to the hurry version of the music
 
 var arena: Arena
+var powerups: Powerups
 var hud: Hud
 var cam: Camera3D
 var beasts := {}  # pid -> Beast
@@ -44,6 +45,13 @@ func _ready() -> void:
 	add_child(arena)
 	arena.setup(server)
 	arena.roll_finished.connect(_on_roll)
+	powerups = Powerups.new()
+	add_child(powerups)
+	powerups.setup(arena, server)
+	if server:
+		powerups.is_behind = func(pid: int) -> bool: return scores.has(pid) and _top_score() - scores[pid].total >= COMEBACK_GAP
+		powerups.picked.connect(func(b: Beast, kind: String): _send(_ev_item, [b.pid, kind]))
+		arena.bumpers_changed.connect(func(lane: int, on: bool): _send(_ev_bumpers, [lane, on], false))
 	cam = Camera3D.new()
 	cam.fov = 55.0
 	cam.position = Vector3(0, 10, 16)
@@ -78,6 +86,7 @@ func _sync_roster() -> void:
 				b.flattened.connect(_on_flattened)
 				b.fx.connect(func(clip, pos, vol): _send(_ev_fx, [clip, pos, vol]))
 				b.hurt.connect(func(v, by, dir, power, label): _send(_ev_hit, [v.pid, by, dir, power, label]))
+				b.threw.connect(powerups.spawn_ball)
 		if not scores.has(pid):
 			scores[pid] = {total = 0, rolls = [], streak = 0, strikes = 0, spares = 0, kos = 0}
 	for pid in beasts.keys():
@@ -110,6 +119,7 @@ func _physics_process(dt: float) -> void:
 		b.sim(inp if pre <= 0.0 else {}, dt)  # everyone waits for the countdown
 	arena.server_update(dt, beasts.values())
 	if not over and pre <= 0.0:
+		powerups.server_update(dt, beasts.values())
 		time_left -= dt
 		if time_left <= 0.0:
 			time_left = 0.0
@@ -120,7 +130,7 @@ func _physics_process(dt: float) -> void:
 	_snap_acc += dt
 	if _snap_acc >= SNAP_INTERVAL:
 		_snap_acc = 0.0
-		_send(_snap, [_server_time, _pack_beasts(), time_left, pre], false)
+		_send(_snap, [_server_time, _pack_beasts(), time_left, pre, powerups.pack()], false)
 		_send(_snap_pins, [_server_time, arena.pin_snapshot()], false)
 
 
@@ -152,6 +162,9 @@ func _on_roll(lane: int, bowler: int, knocked: int, kind: String) -> void:
 	var comeback: bool = _top_score() - scores[bowler].total >= COMEBACK_GAP and pts > 0
 	if comeback:
 		pts = int(ceil(pts * 1.5))
+	var golden: bool = arena.lanes[lane].golden and pts > 0
+	if golden:
+		pts *= 2
 	scores[bowler].total += pts
 	scores[bowler].rolls.append({strike = "X", spare = "/", foul = "F"}.get(kind, "-" if knocked == 0 else str(knocked)))
 	if kind == "strike":
@@ -159,7 +172,7 @@ func _on_roll(lane: int, bowler: int, knocked: int, kind: String) -> void:
 	elif kind == "spare":
 		scores[bowler].spares += 1
 	_send(_ev_scores, [scores])
-	_send(_ev_roll, [lane, bowler, knocked, kind, pts, comeback])
+	_send(_ev_roll, [lane, bowler, knocked, kind, pts, comeback, golden])
 
 
 func _on_ko(victim: Beast, by: int) -> void:
@@ -210,9 +223,11 @@ func _pack_beasts() -> Array:
 	var out := []
 	for pid in beasts:
 		var b: Beast = beasts[pid]
-		var flags := int(b.holding != null) | int(b.reaching) << 1 | int(b.holding is Beast and b.holding.state == Beast.CARRIED) << 2 | int(b.leader) << 3
+		var flags := int(b.holding != null) | int(b.reaching) << 1 | int(b.holding is Beast and b.holding.state == Beast.CARRIED) << 2 \
+			| int(b.leader) << 3 | int(b.golden) << 4
 		out.append([pid, b.global_position, b.global_basis.get_rotation_quaternion(), b.state, b.facing,
-			b.charge if b.charging else -1.0, b.punch_t[0], b.punch_t[1], flags, b.health, b.immune, b.last_toucher, b.ko_time])
+			b.charge if b.charging else -1.0, b.punch_t[0], b.punch_t[1], flags, b.health, b.immune, b.last_toucher, b.ko_time,
+			-1 if b.item == "" else Powerups.KINDS.keys().find(b.item) * 1000 + b.item_uses * 100 + ceili(b.item_t)])  # one int: 8 players must fit in one packet
 	return out
 
 
@@ -236,8 +251,8 @@ func _hello() -> void:
 
 
 @rpc("authority", "unreliable_ordered")
-func _snap(t: float, bs: Array, tl: float, p: float) -> void:
-	_snaps.append([t, bs, tl, p])
+func _snap(t: float, bs: Array, tl: float, p: float, items: Array) -> void:
+	_snaps.append([t, bs, tl, p, items])
 	if _snaps.size() > 30:
 		_snaps.pop_front()
 
@@ -340,11 +355,11 @@ func _ev_scores(s: Dictionary) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func _ev_roll(lane: int, bowler: int, knocked: int, kind: String, pts: int, comeback: bool) -> void:
+func _ev_roll(lane: int, bowler: int, knocked: int, kind: String, pts: int, comeback: bool, golden: bool) -> void:
 	var who: String = Net.players[bowler].name if Net.players.has(bowler) else "?"
 	var col: Color = Net.players[bowler].color if Net.players.has(bowler) else Color.WHITE
 	var pos := Vector3(arena.lane_x(lane), 1.0, arena.head_pin_z)
-	var extra := "  ·  COMEBACK x1.5" if comeback else ""
+	var extra := ("  ·  COMEBACK x1.5" if comeback else "") + ("  ·  GOLDEN x2" if golden else "")
 	match kind:
 		"strike":
 			hud.callout("STRIKE!", Color("ffe14d"), "%s  +%d%s" % [who, pts, extra], true)
@@ -366,6 +381,23 @@ func _ev_roll(lane: int, bowler: int, knocked: int, kind: String, pts: int, come
 			Sfx.play("buzzer", pos, -6.0)
 		_:
 			hud.feed_event(who, col, "%d PINS  +%d" % [knocked, pts], Color("2a7fff"), extra.strip_edges().trim_prefix("·  "), Color.WHITE)
+
+
+@rpc("authority", "call_local", "reliable")
+func _ev_item(pid: int, kind: String) -> void:
+	var b: Beast = beasts.get(pid)
+	var k: Dictionary = Powerups.KINDS[kind]
+	if b:
+		_popup(b.global_position + Vector3.UP * 1.8, k.name, k.color)
+		_burst(b.global_position + Vector3.UP * 0.9, k.color, 20, 4.0)
+		Sfx.play("ding", b.global_position, 0.0)
+	if Net.players.has(pid):
+		hud.feed_event(Net.players[pid].name, Net.players[pid].color, "GOT " + k.name, k.color.darkened(0.35))
+
+
+@rpc("authority", "call_remote", "reliable")
+func _ev_bumpers(lane: int, on: bool) -> void:
+	arena.set_bumpers(lane, on)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -391,8 +423,13 @@ func _process(dt: float) -> void:
 			Sfx.play_ui("ding", -4.0)  # fully charged
 		_dinged = full
 		hud.set_me(me.display_name, me.color, me.health, me.state >= Beast.BALL, maxf(me.ko_time, 0.0))
+		if me.item != "" and me.state < Beast.BALL:
+			var k: Dictionary = Powerups.KINDS[me.item]
+			var left := "%d swings" % me.item_uses if me.item == "giant_pin" else "%ds" % ceili(me.item_t)
+			hud.set_item("%s: %s  ·  %s" % [k.name, k.hint, left], k.color)
 		hud.set_charge(cam.unproject_position(me.global_position + Vector3.UP * 1.9), me.charge / Beast.FULL_CHARGE if me.charging else -1.0)
 		hud.set_prompts(_touchify(_prompts(me)))
+	hud.set_box_marks(_box_marks())
 	hud.set_time(time_left if pre <= 0.0 else Net.match_seconds)
 	arena.screen_board.time_left = time_left
 	arena.screen_board.queue_redraw()
@@ -436,9 +473,28 @@ func _prompts(me: Beast) -> Array:
 	for b: Beast in beasts.values():
 		if b != me and b.state == Beast.BALL and b.global_position.distance_to(me.global_position) < 2.8:
 			return [["HOLD RMB", "GRAB THEM"]]
+	if me.item == "ball":
+		return [["LMB", "THROW THE BALL"], ["HOLD LMB", "THROW HARDER"]]
+	if me.item == "giant_pin":
+		return [["LMB", "BONK"]]
 	if _match_t < 15.0:
 		return [["LMB", "PUNCH"], ["HOLD LMB", "HAYMAKER"], ["RMB", "GRAB"], ["SHIFT", "DIVE"]]
 	return []
+
+
+func _box_marks() -> Array:
+	## Item boxes you can't see (usually behind you) get a marker on the bottom edge, under their x.
+	var out := []
+	var vs := get_viewport().get_visible_rect().size
+	for box: Node3D in get_tree().get_nodes_in_group("item_boxes"):
+		if not box.visible:
+			continue
+		var p := box.global_position + Vector3.UP * 0.9
+		var sp := cam.unproject_position(p)
+		if cam.is_position_behind(p) or sp.y > vs.y - 30.0:
+			var ahead := Vector3(p.x, p.y, cam.global_position.z - 8.0)  # same x, in front of the camera
+			out.append(Vector2(clampf(cam.unproject_position(ahead).x, 60.0, vs.x - 60.0), vs.y - 165.0))  # above the prompts
+	return out if pre <= 0.0 and not over else []
 
 
 func _touchify(items: Array) -> Array:
@@ -464,6 +520,7 @@ func _interpolate(dt: float) -> void:
 	if not _pin_snaps.is_empty():
 		var p := _bracket(_pin_snaps)
 		arena.apply_pins(p[0][1], p[1][1], p[2])
+	powerups.apply(a[4], b[4], w)
 	var prev := {}
 	for e in a[1]:
 		prev[e[0]] = e
@@ -486,6 +543,10 @@ func _interpolate(dt: float) -> void:
 		bst.immune = e[10]
 		bst.last_toucher = e[11]
 		bst.ko_time = e[12]
+		bst.golden = e[8] & 16 != 0
+		bst.item = Powerups.KINDS.keys()[e[13] / 1000] if e[13] >= 0 else ""
+		bst.item_uses = e[13] % 1000 / 100
+		bst.item_t = e[13] % 100
 
 
 func _bracket(buf: Array) -> Array:

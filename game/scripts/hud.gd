@@ -21,6 +21,7 @@ var _status: Label
 var _prompts: HBoxContainer
 var _prompt_key := ""
 var _charge: ChargeMeter
+var _boxes: BoxMarks
 var _pause: PanelContainer
 var _results: Control
 var _flash: ColorRect
@@ -58,6 +59,21 @@ class ChargeMeter extends Control:
 			var f := Look.title_font()
 			draw_string_outline(f, Vector2(-26, -20 + wob), "MAX!", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 6, UI.INK)
 			draw_string(f, Vector2(-26, -20 + wob), "MAX!", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, UI.YELLOW)
+
+
+class BoxMarks extends Control:
+	## "?" chips on the bottom edge pointing at item boxes behind the camera.
+	var pts: Array = []
+	func _draw() -> void:
+		var bob := absf(sin(Time.get_ticks_msec() * 0.006)) * 6.0
+		for p: Vector2 in pts:
+			var c := p - Vector2(0, bob)
+			draw_circle(c, 24.0, Color("8a3dff"))
+			draw_arc(c, 24.0, 0.0, TAU, 32, Color("ffcc33"), 4.0)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-10, 26), c + Vector2(10, 26), c + Vector2(0, 38)]), Color("ffcc33"))
+			var f := Look.title_font()
+			draw_string_outline(f, c + Vector2(-8, 11), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 32, 6, UI.INK)
+			draw_string(f, c + Vector2(-8, 11), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 32, Color.WHITE)
 
 
 func _ready() -> void:
@@ -149,6 +165,9 @@ func _ready() -> void:
 	_charge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_charge.visible = false
 	_root.add_child(_charge)
+	_boxes = BoxMarks.new()
+	_boxes.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_boxes)
 
 	_pause = _overlay_panel("PAUSED")
 	var pv := _pause.get_child(0)
@@ -250,6 +269,18 @@ func set_me(player_name: String, col: Color, health: float, balled: bool, ko_lef
 	var fill: StyleBoxFlat = _health.get_theme_stylebox("fill")
 	fill.bg_color = Color("ff3b4e") if health < 25 else (UI.YELLOW if health < 55 else Color("3ddc97"))
 	_status.text = "KNOCKED OUT  ·  %.1fs" % ko_left if balled else ("Woozy!" if health < 25 else "Ready to brawl")
+	_status.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
+
+
+func set_box_marks(pts: Array) -> void:
+	_boxes.pts = pts
+	_boxes.queue_redraw()
+
+
+func set_item(text: String, col: Color) -> void:
+	## The item you're holding replaces the status line under your health bar.
+	_status.text = text
+	_status.add_theme_color_override("font_color", col)
 
 
 func set_prompts(items: Array) -> void:

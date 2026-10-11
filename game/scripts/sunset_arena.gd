@@ -158,7 +158,7 @@ func _environment() -> void:
 func _floor_and_walls() -> void:
 	_solid(Vector3(half_w * 2.0, 1.0, APPROACH + 10.0), Vector3(0, -0.5, APPROACH * 0.5 + 5.0), _shader(TERRAZZO_SHADER), 1.0)
 	_foul_mat = Look.neon(Color("ff4a3d"), 1.6)
-	_solid(Vector3(half_w * 2.0, 0.02, 0.12), Vector3(0, 0.005, -0.06), _foul_mat)  # foul line
+	Look.mesh(self, Look.box(Vector3(half_w * 2.0, 0.02, 0.12)), _foul_mat, Vector3(0, 0.005, -0.06))  # foul line
 	var depth := APPROACH + lane_len + 13.0
 	var mid_z := (APPROACH + 10.0 - lane_len - 3.0) * 0.5
 	var cream := Look.toy(CREAM, 0.6, false)

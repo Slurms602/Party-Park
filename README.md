@@ -85,8 +85,25 @@ The host picks the map in the lobby.
 
 - **Cosmic Lanes**: the blacklight alley. Four lanes, tight pins, strikes come easy.
 - **Sunset Lanes**: a rooftop alley at golden hour. Three longer, wider lanes with bigger, more spread-out
-  pins, and less aim assist. You get about half as many strikes (22–31% vs 56% in `tests/strike_rate.gd`),
+  pins, and less aim assist. You get about half as many strikes (28% vs 53% in `tests/strike_rate.gd`),
   so aim matters.
+
+### Power-ups
+
+Spinning **?** boxes pop up on the back floor, where you bowl from, so that's where the fight is worth having.
+Run through one to grab a random power-up. A **?** marker at the bottom of the screen points to boxes behind you.
+Everyone sees what you're holding over your head. You hold one at a time, and players who are well behind
+get the scoring ones twice as often.
+
+| Power-up | What it does |
+|---|---|
+| Big Gloves | 10 s of punches that hit 1.5× harder |
+| Turbo Shoes | 10 s of running 40% faster, even while carrying |
+| Sticky Grip | Whoever you carry next can't wake up in your arms (up to 8 s) |
+| Golden Ball | Your next bowl scores double |
+| Bumpers | Rails rise out of the gutters for your next bowl |
+| Giant Pin | 3 swings, each one a full SMASH |
+| Bowling Ball | A real ball to throw at people: tap Punch to throw, hold to throw harder. Up to 55 damage |
 
 ### Make it yours
 
@@ -107,12 +124,14 @@ game/
   scripts/ui.gd         UI kit (theme, bouncy buttons, panels); prefs.gd saved profile; music.gd music player
   scripts/arena.gd      alley geometry and shaders, pins, roll detection, re-racks (Cosmic Lanes)
   scripts/sunset_arena.gd  Sunset Lanes: extends Arena with its own sizes and look
+  scripts/powerups.gd   item boxes, the power-up table, thrown bowling balls
   scripts/bot.gd        bots (host-side; they send the same input as a human)
   scripts/hud.gd, scoreboard.gd, main.gd, sfx.gd (synthesized sounds), look.gd (materials, fonts)
   assets/music          menu, match, hurry and victory tracks, rendered by tools/make_music.py
   assets/fonts          Lilita One + Fredoka (SIL Open Font License)
   tests/test_bowling.gd headless test of knockout → grab → bowl → score → re-rack
   tests/strike_rate.gd  bowls randomized human-ish throws on every map and compares strike rates
+  tests/test_powerups.gd  item boxes and every power-up
 ```
 
 The host runs all physics and sends snapshots at 30 Hz. Clients send input and draw about 100 ms behind,
@@ -121,6 +140,7 @@ interpolating between snapshots.
 ```bash
 godot --headless --path game -s tests/test_bowling.gd                       # core-loop test
 godot --headless --path game -s tests/strike_rate.gd                        # map difficulty check (~1 min)
+godot --headless --path game -s tests/test_powerups.gd                      # power-ups
 godot --headless --path game -- --host --bots=5 --autostart --timescale=3 --quit-after=30   # bot match, prints REPORT (--map=sunset)
 godot --path game -- --join=127.0.0.1 --name=Friend                         # second instance as a client
 python3 tools/make_music.py                                                 # re-render the music (numpy + oggenc)
