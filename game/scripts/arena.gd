@@ -1,21 +1,13 @@
 class_name Arena
 extends Node3D
 ## The cosmic bowling alley: building geometry, pins, roll detection, scoring and re-racks (server side).
+## Other maps extend this and override the size values and the _environment/_floor_and_walls/_decor look.
 
 signal roll_finished(lane: int, bowler: int, knocked: int, kind: String)
 
-const LANES := 4
-const LANE_W := 2.8
-const GUTTER_W := 0.55
-const DIVIDER_W := 0.35
-const PITCH := LANE_W + 2.0 * GUTTER_W + DIVIDER_W
-const LANE_LEN := 18.0
-const HEAD_PIN_Z := -14.6
-const PIN_GAP := 0.78
+const MAPS := {classic = "COSMIC LANES", sunset = "SUNSET LANES"}  # id -> name in the lobby
 const APPROACH := 12.0
-const HALF_W := LANES * PITCH * 0.5 + DIVIDER_W * 0.5
 const PIT_Y := -1.5
-const MASK_FRONT := -LANE_LEN + 0.82  # front face of the panel hanging over the pin decks
 const RERACK_FULL := 2.2  # seconds after all pins are down
 const RERACK_PARTIAL := 12.0  # leftover pins stay up this long, so someone can go for the spare
 
@@ -23,6 +15,10 @@ const LANE_SHADER := """
 shader_type spatial;
 uniform float lane_w = 2.8;
 uniform float half_len = 9.0;
+uniform vec3 mark = vec3(0.2, 0.95, 1.0);
+uniform float glow = 2.5;
+uniform vec3 wood_a = vec3(0.78, 0.42, 0.16);
+uniform vec3 wood_b = vec3(0.95, 0.62, 0.30);
 varying vec3 lp;
 float h(float n) { return fract(sin(n * 91.7) * 43758.5); }
 void vertex() { lp = VERTEX; }
@@ -31,22 +27,21 @@ void fragment() {
 	float d = half_len - lp.z;  // metres past the foul line
 	float board = floor(u * 39.0);
 	float grain = sin(d * 3.0 + h(board) * 20.0 + sin(d * 0.7 + board) * 2.0) * 0.5 + 0.5;
-	vec3 wood = mix(vec3(0.78, 0.42, 0.16), vec3(0.95, 0.62, 0.30), h(board) * 0.6 + grain * 0.25);
+	vec3 wood = mix(wood_a, wood_b, h(board) * 0.6 + grain * 0.25);
 	float seam = smoothstep(0.0, 0.04, fract(u * 39.0)) * smoothstep(1.0, 0.96, fract(u * 39.0));
 	wood *= mix(0.65, 1.0, seam);
 	// Target arrows (a V of seven) and approach-side dots glow under the blacklight.
-	float glow = 0.0;
+	float g = 0.0;
 	for (int i = 1; i <= 7; i++) {
 		float bx = float(i) * 5.0 / 39.0;
 		float tip = 4.2 + abs(float(i) - 4.0) * 0.35;
 		vec2 q = vec2((u - bx) * lane_w, d - tip);
 		float tri = max(abs(q.x) * 3.2 + q.y, -q.y - 0.45);
-		glow = max(glow, smoothstep(0.03, 0.0, tri));
+		g = max(g, smoothstep(0.03, 0.0, tri));
 	}
-	vec3 neon = vec3(0.2, 0.95, 1.0);
 	float edge = smoothstep(0.012, 0.0, min(u, 1.0 - u));
-	ALBEDO = mix(wood, neon, glow);
-	EMISSION = neon * (glow * 2.5 + edge * 1.5);
+	ALBEDO = mix(wood, mark, g);
+	EMISSION = mark * glow * (g + edge * 0.6);
 	ROUGHNESS = 0.07;
 	SPECULAR = 0.7;
 }
@@ -81,6 +76,25 @@ void fragment() {
 }
 """
 
+# Map size. Strikes get harder as the pins spread out relative to the 1.1 m wide balled-up player.
+var lane_count := 4
+var lane_w := 2.8
+var gutter_w := 0.55
+var divider_w := 0.35
+var lane_len := 18.0
+var head_pin_z := -14.6
+var pin_gap := 0.78
+var pin_scale := 1.0
+var pin_mass := 0.35
+var aim_assist := 0.5  # how far a bowl bends toward the head pin
+var screen_y := 5.05  # overhead scoreboard height
+var cam_look := Vector3(0, -6.5, -14.0)  # game camera direction
+var style := {cap = Color("2a1a55"), strip = Color("b04dff"), strip_glow = 2.5, deck_light = Color("fff3e0"),
+	ret = Color("2a1a55"), hood = Color("ff3fb4"), hood_glow = 0.5, bench = Color("ff8c42")}
+var pitch: float
+var half_w: float
+var mask_front: float  # front face of the panel hanging over the pin decks
+
 var lanes: Array[Dictionary] = []
 var pins: Array[RigidBody3D] = []
 var screen_board: Control  # the overhead scoreboard lives in a SubViewport
@@ -88,12 +102,20 @@ var _foul_mat: StandardMaterial3D
 var _server := false
 
 
+static func make(map_id: String) -> Arena:
+	return SunsetArena.new() if map_id == "sunset" else Arena.new()
+
+
 func setup(is_server: bool) -> void:
 	_server = is_server
+	pitch = lane_w + 2.0 * gutter_w + divider_w
+	half_w = lane_count * pitch * 0.5 + divider_w * 0.5
+	mask_front = -lane_len + 0.82
 	_environment()
 	_floor_and_walls()
-	for i in LANES:
+	for i in lane_count:
 		_lane(i)
+	_furniture()
 	_decor()
 
 
@@ -104,12 +126,12 @@ func flash_foul() -> void:
 
 
 func lane_x(i: int) -> float:
-	return (i - (LANES - 1) * 0.5) * PITCH
+	return (i - (lane_count - 1) * 0.5) * pitch
 
 
 func lane_at(x: float) -> int:
-	for i in LANES:
-		if absf(x - lane_x(i)) < LANE_W * 0.5 + GUTTER_W:
+	for i in lane_count:
+		if absf(x - lane_x(i)) < lane_w * 0.5 + gutter_w:
 			return i
 	return -1
 
@@ -119,7 +141,8 @@ func spawn_point(i: int) -> Vector3:
 
 
 func ball_return_point(x: float) -> Vector3:
-	return Vector3(PITCH * signf(x) if absf(x) > 0.01 else PITCH, 1.8, 3.2)
+	var rx := (lane_count - 2) * 0.5 * pitch  # the returns sit between the two outer pairs of lanes
+	return Vector3(rx * signf(x) if absf(x) > 0.01 else rx, 1.8, 3.2)
 
 
 # ---------------------------------------------------------------- server rules
@@ -135,7 +158,7 @@ func _update_lane(lane: Dictionary, dt: float, beasts: Array) -> void:
 	if lane.ball == null:
 		for b: Beast in beasts:
 			if b.is_rollable() and b.last_toucher != 0 and lane_at(b.global_position.x) == lane.i \
-					and b.global_position.z < -0.3 and b.global_position.z > HEAD_PIN_Z + 1.0 \
+					and b.global_position.z < -0.3 and b.global_position.z > head_pin_z + 1.0 \
 					and b.linear_velocity.z < -2.5 and absf(b.linear_velocity.x) < -b.linear_velocity.z * 0.5 \
 					and b.projectile_t > 0.0 and standing(lane) > 0:  # bowled (or punted hard) down the lane
 				lane.ball = b
@@ -150,7 +173,7 @@ func _update_lane(lane: Dictionary, dt: float, beasts: Array) -> void:
 		var b = lane.ball  # untyped: the bowled player may have disconnected (freed)
 		lane.t += dt
 		var ball_done: bool = not is_instance_valid(b) or not b.is_rollable() \
-			or b.global_position.z < -LANE_LEN or b.global_position.y < -0.6 \
+			or b.global_position.z < -lane_len or b.global_position.y < -0.6 \
 			or b.linear_velocity.length() < 0.6 or lane_at(b.global_position.x) != lane.i
 		if ball_done:
 			lane.done_t += dt
@@ -188,7 +211,7 @@ func standing(lane: Dictionary) -> int:
 		var p: RigidBody3D = lane.pins[k]
 		var spot: Vector3 = lane.rack[k]
 		if p.global_transform.basis.y.dot(Vector3.UP) > 0.8 and p.global_position.y > -0.2 \
-				and Vector2(p.global_position.x - spot.x, p.global_position.z - spot.z).length() < 0.45:
+				and Vector2(p.global_position.x - spot.x, p.global_position.z - spot.z).length() < 0.45 * pin_scale:
 			n += 1
 	return n
 
@@ -206,8 +229,8 @@ func _rerack(lane: Dictionary, beasts: Array) -> void:
 		if lane.pins.has(b.holding):
 			b.release_hold()
 		# The sweep bar clears the deck into the pit, so pins never drop onto anyone.
-		if absf(b.global_position.x - x) < LANE_W * 0.5 + GUTTER_W and b.global_position.z < HEAD_PIN_Z + 1.5 \
-				and b.global_position.z > -LANE_LEN and b.state != Beast.CARRIED:
+		if absf(b.global_position.x - x) < lane_w * 0.5 + gutter_w and b.global_position.z < head_pin_z + 1.5 \
+				and b.global_position.z > -lane_len and b.state != Beast.CARRIED:
 			b.linear_velocity = Vector3(0, 1.5, -7.0)
 	lane.racking = true
 	var tw := create_tween().set_parallel()
@@ -329,24 +352,24 @@ func _floor_and_walls() -> void:
 	var carpet := ShaderMaterial.new()
 	carpet.shader = Shader.new()
 	carpet.shader.code = CARPET_SHADER
-	_solid(Vector3(HALF_W * 2.0, 1.0, APPROACH + 10.0), Vector3(0, -0.5, APPROACH * 0.5 + 5.0), carpet, 1.0)
+	_solid(Vector3(half_w * 2.0, 1.0, APPROACH + 10.0), Vector3(0, -0.5, APPROACH * 0.5 + 5.0), carpet, 1.0)
 	_foul_mat = Look.neon(Color("ff2d55"), 4.0)
-	_solid(Vector3(HALF_W * 2.0, 0.02, 0.12), Vector3(0, 0.005, -0.06), _foul_mat)  # foul line
+	_solid(Vector3(half_w * 2.0, 0.02, 0.12), Vector3(0, 0.005, -0.06), _foul_mat)  # foul line
 	var wall := Look.toy(Color("1b0f3a"), 0.8, false)
-	var depth := APPROACH + LANE_LEN + 13.0  # runs past the camera, which sits behind the back rail
-	var mid_z := (APPROACH + 10.0 - LANE_LEN - 3.0) * 0.5
+	var depth := APPROACH + lane_len + 13.0  # runs past the camera, which sits behind the back rail
+	var mid_z := (APPROACH + 10.0 - lane_len - 3.0) * 0.5
 	for s in [-1.0, 1.0]:
-		_solid(Vector3(0.6, 7.0, depth), Vector3(s * (HALF_W + 0.3), 3.0, mid_z), wall)
+		_solid(Vector3(0.6, 7.0, depth), Vector3(s * (half_w + 0.3), 3.0, mid_z), wall)
 		Look.mesh(self, Look.box(Vector3(0.08, 0.08, depth)), Look.neon(Color("ff3fb4") if s < 0 else Color("2de2ff")),
-			Vector3(s * HALF_W, 2.6, mid_z))
+			Vector3(s * half_w, 2.6, mid_z))
 	# The back wall is invisible so the camera behind it can see; a neon floor strip marks it.
 	var back := BoxShape3D.new()
-	back.size = Vector3(HALF_W * 2.0, 8.0, 0.6)
+	back.size = Vector3(half_w * 2.0, 8.0, 0.6)
 	_body(back, Vector3(0, 3.5, APPROACH + 0.3))
-	Look.mesh(self, Look.box(Vector3(HALF_W * 2.0, 0.02, 0.15)), Look.neon(Color("ffe14d"), 1.5), Vector3(0, 0.01, APPROACH))
-	_solid(Vector3(HALF_W * 2.0, 7.0, 0.6), Vector3(0, 2.0, -LANE_LEN - 3.3), Look.toy(Color("07040f"), 1.0, false))
-	_solid(Vector3(HALF_W * 2.0, 1.0, 3.0), Vector3(0, PIT_Y - 0.5, -LANE_LEN - 1.5), Look.toy(Color("120a22"), 1.0, false), 0.6, "pit")
-	_solid(Vector3(HALF_W * 2.0, 0.3, 0.3), Vector3(0, -0.15, -LANE_LEN - 0.15), wall)  # pit lip under the pin deck edge
+	Look.mesh(self, Look.box(Vector3(half_w * 2.0, 0.02, 0.15)), Look.neon(Color("ffe14d"), 1.5), Vector3(0, 0.01, APPROACH))
+	_solid(Vector3(half_w * 2.0, 7.0, 0.6), Vector3(0, 2.0, -lane_len - 3.3), Look.toy(Color("07040f"), 1.0, false))
+	_solid(Vector3(half_w * 2.0, 1.0, 3.0), Vector3(0, PIT_Y - 0.5, -lane_len - 1.5), Look.toy(Color("120a22"), 1.0, false), 0.6, "pit")
+	_solid(Vector3(half_w * 2.0, 0.3, 0.3), Vector3(0, -0.15, -lane_len - 0.15), wall)  # pit lip under the pin deck edge
 
 
 func _lane(i: int) -> void:
@@ -354,26 +377,31 @@ func _lane(i: int) -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = Shader.new()
 	mat.shader.code = LANE_SHADER
-	_solid(Vector3(LANE_W, 0.4, LANE_LEN), Vector3(x, -0.2, -LANE_LEN * 0.5), mat, 0.06, "oil")
+	mat.set_shader_parameter("lane_w", lane_w)
+	mat.set_shader_parameter("half_len", lane_len * 0.5)
+	for k in ["mark", "glow", "wood_a", "wood_b"]:
+		if style.has(k):
+			mat.set_shader_parameter(k, style[k])
+	_solid(Vector3(lane_w, 0.4, lane_len), Vector3(x, -0.2, -lane_len * 0.5), mat, 0.06, "oil")
 	var gutter := Look.toy(Color("8c8ca6"), 0.2, false)
 	gutter.metallic = 0.8
-	var cap := Look.toy(Color("2a1a55"), 0.5, false)
+	var cap := Look.toy(style.cap, 0.5, false)
 	for s in [-1.0, 1.0]:
-		_solid(Vector3(GUTTER_W, 0.2, LANE_LEN), Vector3(x + s * (LANE_W + GUTTER_W) * 0.5, -0.42, -LANE_LEN * 0.5), gutter, 0.2)
-		var cx: float = x + s * (LANE_W * 0.5 + GUTTER_W + DIVIDER_W * 0.5)
-		_solid(Vector3(DIVIDER_W, 0.6, LANE_LEN), Vector3(cx, -0.22, -LANE_LEN * 0.5), cap)
-		Look.mesh(self, Look.box(Vector3(0.05, 0.03, LANE_LEN)), Look.neon(Color("b04dff"), 2.5), Vector3(cx, 0.09, -LANE_LEN * 0.5))
+		_solid(Vector3(gutter_w, 0.2, lane_len), Vector3(x + s * (lane_w + gutter_w) * 0.5, -0.42, -lane_len * 0.5), gutter, 0.2)
+		var cx: float = x + s * (lane_w * 0.5 + gutter_w + divider_w * 0.5)
+		_solid(Vector3(divider_w, 0.6, lane_len), Vector3(cx, -0.22, -lane_len * 0.5), cap)
+		Look.mesh(self, Look.box(Vector3(0.05, 0.03, lane_len)), Look.neon(style.strip, style.strip_glow), Vector3(cx, 0.09, -lane_len * 0.5))
 	var light := OmniLight3D.new()  # pins get a spotlight like a real pin deck
-	light.position = Vector3(x, 3.0, HEAD_PIN_Z - 1.2)
-	light.omni_range = 5.5
+	light.position = Vector3(x, 3.0 * pin_scale, head_pin_z - 1.2 * pin_scale)
+	light.omni_range = 5.5 * pin_scale
 	light.light_energy = 2.2
-	light.light_color = Color("fff3e0")
+	light.light_color = style.deck_light
 	add_child(light)
 	var lane := {i = i, pins = [], rack = [], ball = null, bowler = 0, before = 10, t = 0.0, done_t = 0.0, rerack = -1.0, racking = false, foul = false}
 	var pin_mesh := Arena.pin_mesh()
 	for row in 4:
 		for k in row + 1:
-			var spot := Vector3(x + (k - row * 0.5) * PIN_GAP, 0.0, HEAD_PIN_Z - row * PIN_GAP * 0.866)
+			var spot := Vector3(x + (k - row * 0.5) * pin_gap, 0.0, head_pin_z - row * pin_gap * 0.866)
 			lane.rack.append(spot)
 			lane.pins.append(_pin(spot, pin_mesh))
 	lanes.append(lane)
@@ -383,9 +411,9 @@ static var _pin_mat: StandardMaterial3D
 
 func _pin(spot: Vector3, m: Mesh) -> RigidBody3D:
 	var p := RigidBody3D.new()
-	p.mass = 0.35
+	p.mass = pin_mass
 	p.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	p.center_of_mass = Vector3(0, 0.38, 0)
+	p.center_of_mass = Vector3(0, 0.38 * pin_scale, 0)
 	p.physics_material_override = PhysicsMaterial.new()
 	p.physics_material_override.bounce = 0.35
 	p.physics_material_override.friction = 0.4
@@ -394,12 +422,12 @@ func _pin(spot: Vector3, m: Mesh) -> RigidBody3D:
 	p.add_to_group("pins")
 	var cs := CollisionShape3D.new()
 	var cyl := CylinderShape3D.new()
-	cyl.radius = 0.17
-	cyl.height = 1.2
+	cyl.radius = 0.17 * pin_scale
+	cyl.height = 1.2 * pin_scale
 	cs.shape = cyl
-	cs.position.y = 0.6
+	cs.position.y = 0.6 * pin_scale
 	p.add_child(cs)
-	Look.mesh(p, m, Arena.pin_material())
+	Look.mesh(p, m, Arena.pin_material()).scale = Vector3.ONE * pin_scale
 	add_child(p)
 	p.global_position = spot
 	pins.append(p)
@@ -446,29 +474,32 @@ static func pin_mesh() -> ArrayMesh:
 
 func _decor() -> void:
 	# Masking panel above the pin decks with the alley sign.
-	_solid(Vector3(HALF_W * 2.0, 5.4, 0.4), Vector3(0, 5.3, -LANE_LEN + 0.6), Look.toy(Color("140a2e"), 0.6, false))
+	_solid(Vector3(half_w * 2.0, 5.4, 0.4), Vector3(0, 5.3, -lane_len + 0.6), Look.toy(Color("140a2e"), 0.6, false))
 	var sign := Label3D.new()
 	sign.text = "BOWLING YOUR FRIENDS"
 	sign.font_size = 160
 	sign.outline_size = 24
 	sign.modulate = Color("ffe14d")
 	sign.outline_modulate = Color("ff2d95")
-	sign.position = Vector3(0, 7.2, MASK_FRONT)
+	sign.position = Vector3(0, 7.2, mask_front)
 	sign.pixel_size = 0.006
 	add_child(sign)
-	for i in LANES:
+	for i in lane_count:
 		var n := Label3D.new()
 		n.text = str(i + 1)
 		n.font_size = 140
 		n.modulate = Color("2de2ff")
-		n.position = Vector3(lane_x(i), 2.85, MASK_FRONT)
+		n.position = Vector3(lane_x(i), 2.85, mask_front)
 		n.pixel_size = 0.006
 		add_child(n)
+	Look.mesh(self, Look.box(Vector3(11.3, 3.8, 0.02)), Look.neon(Color("ff3fb4"), 1.0), Vector3(0, screen_y, mask_front + 0.01))
 
+
+func _furniture() -> void:
 	# Ball returns between lane pairs: knocked-out bowlers pop back out of these.
 	for s in [-1.0, 1.0]:
-		var base := _solid(Vector3(0.9, 0.8, 2.0), Vector3(s * PITCH, 0.4, 3.2), Look.toy(Color("2a1a55"), 0.4))
-		Look.mesh(base, Look.sphere(0.55, 0.7), Look.neon(Color("ff3fb4"), 0.5), Vector3(0, 0.45, 0))
+		var base := _solid(Vector3(0.9, 0.8, 2.0), Vector3(ball_return_point(s).x, 0.4, 3.2), Look.toy(style.ret, 0.4))
+		Look.mesh(base, Look.sphere(0.55, 0.7), Look.neon(style.hood, style.hood_glow), Vector3(0, 0.45, 0))
 
 	# Overhead scoreboard screen, rendered from a SubViewport.
 	var vp := SubViewport.new()
@@ -484,10 +515,9 @@ func _decor() -> void:
 	var sm := StandardMaterial3D.new()
 	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	sm.albedo_texture = vp.get_texture()
-	var screen := Look.mesh(self, scr, sm, Vector3(0, 5.05, MASK_FRONT + 0.05))  # mounted on the masking unit
+	var screen := Look.mesh(self, scr, sm, Vector3(0, screen_y, mask_front + 0.05))  # mounted on the masking unit
 	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	Look.mesh(self, Look.box(Vector3(11.3, 3.8, 0.02)), Look.neon(Color("ff3fb4"), 1.0), Vector3(0, 5.05, MASK_FRONT + 0.01))
 
 	# Benches on the brawling floor give people something to fall over.
 	for s in [-1.0, 1.0]:
-		_solid(Vector3(3.2, 0.5, 0.8), Vector3(s * 5.0, 0.25, 9.6), Look.toy(Color("ff8c42"), 0.5))
+		_solid(Vector3(3.2, 0.5, 0.8), Vector3(s * 5.0, 0.25, 9.6), Look.toy(style.bench, 0.5))

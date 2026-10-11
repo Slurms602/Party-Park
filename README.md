@@ -79,6 +79,15 @@ offer to download the export templates the first time.
 - Bowled players come back out of the ball return with 2 s of immunity.
 - Pick up a pin with Grab and Punch to swing it as a club.
 
+### Maps
+
+The host picks the map in the lobby.
+
+- **Cosmic Lanes**: the blacklight alley. Four lanes, tight pins, strikes come easy.
+- **Sunset Lanes**: a rooftop alley at golden hour. Three longer, wider lanes with bigger, more spread-out
+  pins, and less aim assist. You get about half as many strikes (22–31% vs 56% in `tests/strike_rate.gd`),
+  so aim matters.
+
 ### Make it yours
 
 **Customize** from the menu or the lobby to pick a look: hat, eyes, mouth, outfit, gloves, shoes and accent color,
@@ -96,12 +105,14 @@ game/
   scripts/bowler_model.gd  the bowler's look: bean body + outfit shader, face with expressions, hats, gloves, shoes
   scripts/skins.gd      cosmetic catalog (slots, options, presets): add a cosmetic here + a builder in bowler_model
   scripts/ui.gd         UI kit (theme, bouncy buttons, panels); prefs.gd saved profile; music.gd music player
-  scripts/arena.gd      alley geometry and shaders, pins, roll detection, re-racks
+  scripts/arena.gd      alley geometry and shaders, pins, roll detection, re-racks (Cosmic Lanes)
+  scripts/sunset_arena.gd  Sunset Lanes: extends Arena with its own sizes and look
   scripts/bot.gd        bots (host-side; they send the same input as a human)
   scripts/hud.gd, scoreboard.gd, main.gd, sfx.gd (synthesized sounds), look.gd (materials, fonts)
   assets/music          menu, match, hurry and victory tracks, rendered by tools/make_music.py
   assets/fonts          Lilita One + Fredoka (SIL Open Font License)
   tests/test_bowling.gd headless test of knockout → grab → bowl → score → re-rack
+  tests/strike_rate.gd  bowls randomized human-ish throws on every map and compares strike rates
 ```
 
 The host runs all physics and sends snapshots at 30 Hz. Clients send input and draw about 100 ms behind,
@@ -109,7 +120,8 @@ interpolating between snapshots.
 
 ```bash
 godot --headless --path game -s tests/test_bowling.gd                       # core-loop test
-godot --headless --path game -- --host --bots=5 --autostart --timescale=3 --quit-after=30   # bot match, prints REPORT
+godot --headless --path game -s tests/strike_rate.gd                        # map difficulty check (~1 min)
+godot --headless --path game -- --host --bots=5 --autostart --timescale=3 --quit-after=30   # bot match, prints REPORT (--map=sunset)
 godot --path game -- --join=127.0.0.1 --name=Friend                         # second instance as a client
 python3 tools/make_music.py                                                 # re-render the music (numpy + oggenc)
 cd server && npm install && node relay.js                                   # run the relay locally (port 8080)

@@ -40,7 +40,7 @@ var _match_t := 0.0
 func _ready() -> void:
 	server = Net.is_host()
 	time_left = Net.match_seconds
-	arena = Arena.new()
+	arena = Arena.make(Net.map)
 	add_child(arena)
 	arena.setup(server)
 	arena.roll_finished.connect(_on_roll)
@@ -343,7 +343,7 @@ func _ev_scores(s: Dictionary) -> void:
 func _ev_roll(lane: int, bowler: int, knocked: int, kind: String, pts: int, comeback: bool) -> void:
 	var who: String = Net.players[bowler].name if Net.players.has(bowler) else "?"
 	var col: Color = Net.players[bowler].color if Net.players.has(bowler) else Color.WHITE
-	var pos := Vector3(arena.lane_x(lane), 1.0, Arena.HEAD_PIN_Z)
+	var pos := Vector3(arena.lane_x(lane), 1.0, arena.head_pin_z)
 	var extra := "  ·  COMEBACK x1.5" if comeback else ""
 	match kind:
 		"strike":
@@ -516,9 +516,9 @@ func _update_camera(dt: float, me: Beast) -> void:
 		focus = me.global_position
 	# Low and behind, looking down the lanes so you can always see the pins.
 	var want := focus + Vector3(0, 6.5, 9.0)
-	want.x = clampf(want.x, -Arena.HALF_W + 3.5, Arena.HALF_W - 3.5)  # don't peek outside the alley
+	want.x = clampf(want.x, -arena.half_w + 3.5, arena.half_w - 3.5)  # don't peek outside the alley
 	cam.global_position = cam.global_position.lerp(want, 1.0 - exp(-dt * (2.5 if _follow else 5.0)))
-	cam.look_at(cam.global_position + Vector3(0, -6.5, -14.0).normalized())
+	cam.look_at(cam.global_position + arena.cam_look.normalized())
 	_shake = maxf(_shake - dt * 1.2, 0.0)
 	cam.h_offset = randf_range(-1.0, 1.0) * _shake
 	cam.v_offset = randf_range(-1.0, 1.0) * _shake

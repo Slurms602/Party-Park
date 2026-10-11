@@ -151,7 +151,7 @@ func sim(inp: Dictionary, dt: float) -> void:
 		DIVE: _sim_dive(dt)
 		BALL, CARRIED: _sim_ball(inp, dt)
 	_prev = inp
-	if global_position.z < -Arena.LANE_LEN and global_position.y < Arena.PIT_Y + 1.0 and state != CARRIED:
+	if global_position.z < -arena.lane_len and global_position.y < Arena.PIT_Y + 1.0 and state != CARRIED:
 		_respawn(arena.ball_return_point(global_position.x), Vector3(0, 3.0, 3.5))  # out of the pit via the ball return
 	elif global_position.y < -12.0 or absf(global_position.x) > 30.0 or absf(global_position.z) > 40.0:
 		_respawn(arena.spawn_point(randi() % 8))
@@ -502,8 +502,8 @@ func _bowl(power: float) -> void:
 	var f := _forward()
 	var lane := arena.lane_at(global_position.x)
 	if lane >= 0 and f.z < -0.6:  # gentle assist toward the lane's head pin
-		var aim := Vector3(arena.lane_x(lane), 0.0, Arena.HEAD_PIN_Z) - global_position
-		f = f.lerp(Vector3(aim.x, 0.0, aim.z).normalized(), 0.5).normalized()
+		var aim := Vector3(arena.lane_x(lane), 0.0, arena.head_pin_z) - global_position
+		f = f.lerp(Vector3(aim.x, 0.0, aim.z).normalized(), arena.aim_assist).normalized()
 	var v := f * lerpf(8.0, 17.0, power)
 	release_hold(v - linear_velocity * 0.7)
 	ball.global_position = Vector3(global_position.x, global_position.y - 0.2, global_position.z) + f * 1.0

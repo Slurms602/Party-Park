@@ -1,7 +1,7 @@
 extends Node
 ## Title screen, customization, settings and lobby. Starts and frees the match.
 ## Command-line args after `--` drive tests: --host --join=IP --name=N --bots=N --seconds=S --autostart
-## --quit-after=S --shot=out.png@5,9 --timescale=N --screen=customize|settings|join
+## --quit-after=S --shot=out.png@5,9 --timescale=N --screen=customize|settings|join --map=classic|sunset
 
 var _game: Game
 var _attract: Node3D
@@ -221,6 +221,14 @@ func _build_ui() -> void:
 	_length.custom_minimum_size = Vector2(240, 60)
 	row.add_child(_length)
 	_host_only.append(_length)
+	var maps := OptionButton.new()
+	for id in Arena.MAPS:
+		maps.add_item(Arena.MAPS[id])
+	maps.select(Arena.MAPS.keys().find(Net.map))
+	maps.item_selected.connect(func(i): Net.map = Arena.MAPS.keys()[i])
+	maps.custom_minimum_size = Vector2(260, 60)
+	row.add_child(maps)
+	_host_only.append(maps)
 	var start := UI.button(lobby, "START MATCH", func(): Net.start_match(_length.get_selected_id() * 60.0))
 	start.add_theme_stylebox_override("normal", UI.box(Color("c79a00"), UI.YELLOW))
 	_host_only.append(start)
@@ -564,7 +572,7 @@ func _show_attract(on: bool) -> void:
 	if on and _attract == null:
 		_attract = Node3D.new()
 		add_child(_attract)
-		_attract_arena = Arena.new()
+		_attract_arena = Arena.make(_args.get("map", Arena.MAPS.keys().pick_random()))
 		_attract.add_child(_attract_arena)
 		_attract_arena.setup(true)
 		_attract_arena.screen_board.set_rows([{name = "INSERT FRIENDS", color = UI.PINK, total = 300, rolls = ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"]}], 0.0)
@@ -644,6 +652,8 @@ func _run_args() -> void:
 		Engine.max_physics_steps_per_frame = 64
 	if _args.has("relay"):
 		Prefs.relay = _args.relay
+	if _args.has("map"):
+		Net.map = _args.map
 	var setup := func():
 		for i in int(_args.get("bots", "0")):
 			Net.add_bot()

@@ -24,6 +24,7 @@ const BOT_NAMES := ["Gutterball", "Split", "Turkey", "Lefty", "Big Lebowski", "P
 var players := {}  # peer id (bots < 0) -> {name, color, bot, skin}
 var in_match := false
 var match_seconds := 180.0
+var map := "classic"  # Arena.MAPS id the host picked
 var _next_bot := -1
 var room_code := ""  # online room code (host and clients)
 var lan_games := {}  # ip -> beacon info {name, n, code, port, seen}
@@ -303,7 +304,7 @@ func remove_bot() -> void:
 
 func start_match(seconds: float) -> void:
 	if is_host():
-		_start.rpc(seconds)
+		_start.rpc(seconds, map)
 
 
 func end_match() -> void:
@@ -353,7 +354,7 @@ func _register(player_name: String, skin: Dictionary) -> void:
 	players[id] = _entry(player_name, false, skin)
 	_sync_players.rpc(players)
 	if in_match:  # drop-in: late joiners spawn straight into the running match
-		_start.rpc_id(id, match_seconds)
+		_start.rpc_id(id, match_seconds, map)
 
 
 func _on_peer_disconnected(id: int) -> void:
@@ -369,8 +370,9 @@ func _sync_players(p: Dictionary) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func _start(seconds: float) -> void:
+func _start(seconds: float, map_id: String) -> void:
 	match_seconds = seconds
+	map = map_id if Arena.MAPS.has(map_id) else "classic"
 	in_match = true
 	match_started.emit(seconds)
 
