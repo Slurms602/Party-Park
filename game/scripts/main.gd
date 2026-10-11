@@ -656,6 +656,8 @@ func _run_args() -> void:
 	if _args.has("discover"):
 		_show("join")
 		get_tree().create_timer(3.0).timeout.connect(func(): print("LAN GAMES ", JSON.stringify(Net.lan_games)))
+	if _args.has("hide-ui"):  # clean background shots for the website
+		_ui.visible = false
 	if _args.has("shot"):  # --shot=out.png@5,9 saves out_5.png and out_9.png (real seconds)
 		var parts: PackedStringArray = _args.shot.split("@")
 		for when in (parts[1] if parts.size() > 1 else "3").split(","):
