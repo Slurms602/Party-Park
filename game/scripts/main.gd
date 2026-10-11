@@ -31,6 +31,7 @@ var _conn_t := 0.0
 var _room_title: Label
 var _room_note: Label
 var _back_to := "main"
+var _conn_ip := ""  # set while joining by IP (not through the online server)
 var _hosting := false  # waiting for an online room; fall back to hosting by IP if the server can't be reached
 
 
@@ -492,7 +493,10 @@ func _refresh_lobby() -> void:
 		_room_code.add_theme_font_size_override("font_size", 46)
 		var router: String = {0: "Asking your router to open the game port...", 1: "Your router opened the game port automatically.",
 			-1: "Your router didn't open the port automatically: forward UDP %d to this PC so friends outside your Wi-Fi can join." % Net.PORT}[Net.port_open]
-		_room_note.text = "%s Friends on your Wi-Fi: %s (it also shows up in their JOIN GAME list)." % [router, lan[0] if not lan.is_empty() else "-"]
+		if Net.shared_ip:
+			router = "Your internet provider shares your IP, so friends outside your Wi-Fi can't join by IP. Set up the online server (room codes) for that."
+		_room_note.text = "FRIENDS ON YOUR WI-FI: type %s\nFRIENDS ELSEWHERE: type the IP above. %s\nNobody can get in? Allow \"Bowling your Friends\" in Windows Firewall (tick Private AND Public)." \
+			% [lan[0] if not lan.is_empty() else "-", router]
 	else:
 		_room_card.visible = false
 		if Net.is_online():
@@ -519,7 +523,7 @@ func _join_code() -> void:
 		_connecting("Joining %s..." % text)
 		Net.join_code(text)
 	elif text.count(".") == 3 or text.contains(":"):
-		_connecting("Connecting to %s..." % text)
+		_connecting("Connecting to %s..." % text, text)
 		var err := Net.join_ip(text)
 		if err != "":
 			_status.text = err
@@ -528,7 +532,8 @@ func _join_code() -> void:
 		_status.text = "Type the 4-letter code (like BRKT) or the IP (like 73.21.140.9) your friend gave you."
 
 
-func _connecting(msg: String) -> void:
+func _connecting(msg: String, ip := "") -> void:
+	_conn_ip = ip
 	_status.text = ""
 	_conn_msg.text = msg
 	_conn_t = 0.0
@@ -547,7 +552,7 @@ func _refresh_lan() -> void:
 				_join_code()
 			else:
 				_back_to = "join"
-				_connecting("Connecting to %s..." % ip)
+				_connecting("Connecting to %s..." % ip, ip)
 				Net.join_ip(ip), 460)
 		b.add_theme_font_size_override("font_size", 22)
 	_lan_empty.visible = Net.lan_games.is_empty()
@@ -593,7 +598,8 @@ func _process(dt: float) -> void:
 	if _screens.connecting.visible:
 		_conn_t += dt
 		if _conn_t > 4.0 and not Net.is_online():
-			_conn_msg.text = "Waking up the online server...\nThe first game of the day can take up to a minute."
+			_conn_msg.text = ("Waking up the online server...\nThe first game of the day can take up to a minute." if _conn_ip == "" else
+				"Still trying %s...\nOn the same Wi-Fi as the host? Use the host's Wi-Fi IP (starts with 192.168 or 10.)." % _conn_ip)
 	if _preview_holder.visible:
 		_preview.rotation.y = PI + sin(Time.get_ticks_msec() * 0.0007) * 0.6  # face the camera, sway a little
 		_preview.pose(dt, {dance = true})

@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Bowling your Friends"
-config/version="0.1.0"
+config/version="0.1.1"
 config/icon="res://icon.svg"
 config/description="Beat your friends into a ball, then bowl them."
 run/main_scene="res://scenes/main.tscn"

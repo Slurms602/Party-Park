@@ -31,6 +31,9 @@ var _beacon := PacketPeerUDP.new()
 var _beacon_t := 0.0
 var _listen: PacketPeerUDP
 var public_ip := ""  # what friends type when hosting by IP
+var shared_ip := false  # the router's outside address isn't the real internet IP (ISP CGNAT / double NAT)
+var _router_ip := ""
+var _web_ip := ""
 var port_open := 0  # 1 = the router opened the port for us (UPnP), -1 = it didn't, 0 = still checking
 var _upnp: UPNP
 var _upnp_thread: Thread
@@ -137,6 +140,9 @@ func join_ip(address: String) -> String:
 func _open_port() -> void:
 	public_ip = ""
 	port_open = 0
+	shared_ip = false
+	_router_ip = ""
+	_web_ip = ""
 	_upnp_thread = Thread.new()
 	_upnp_thread.start(_upnp_work)  # router discovery blocks for ~2 s, so keep it off the main thread
 	var http := HTTPRequest.new()  # fallback in case the router doesn't speak UPnP
@@ -144,8 +150,10 @@ func _open_port() -> void:
 	add_child(http)
 	http.request_completed.connect(func(_r, code, _h, body):
 		var ip: String = body.get_string_from_utf8().strip_edges()
-		if code == 200 and ip.is_valid_ip_address() and public_ip == "":
+		if code == 200 and ip.is_valid_ip_address():
+			_web_ip = ip
 			public_ip = ip
+			_check_shared()
 			direct_info_changed.emit()
 		http.queue_free())
 	if http.request("https://api.ipify.org") != OK:
@@ -171,9 +179,17 @@ func _upnp_done(u: UPNP, ip: String) -> void:
 		return
 	_upnp = u
 	port_open = 1 if u else -1
-	if ip.is_valid_ip_address() and not _is_private(ip):
+	_router_ip = ip
+	if ip.is_valid_ip_address() and not _is_private(ip) and public_ip == "":
 		public_ip = ip
+	_check_shared()
 	direct_info_changed.emit()
+
+
+func _check_shared() -> void:
+	# If the router's own outside address differs from what the internet sees, there's another NAT in front of
+	# it (common with mobile/fibre ISPs): the opened port never reaches this PC from outside.
+	shared_ip = _router_ip.is_valid_ip_address() and _web_ip != "" and _router_ip != _web_ip
 
 
 func _close_port() -> void:
