@@ -2,6 +2,7 @@ class_name TouchControls
 extends CanvasLayer
 ## On-screen controls for phones: a thumb stick on the left, action buttons on the right.
 ## They press the same input actions as the keyboard, so the rest of the game doesn't know the difference.
+## GRAB is a toggle here: one thumb can't hold GRAB and wind up PUNCH at the same time.
 
 const RADIUS := 110.0
 const BUTTONS := [  # label, action, offset from bottom-right, radius, color
@@ -16,6 +17,10 @@ var _origin := Vector2.ZERO
 var _vec := Vector2.ZERO
 var _pad: Node2D
 var _buttons: Array[TouchScreenButton] = []
+var me_id := 1  # the local player's peer id (set by Game)
+var _grab_on := false
+var _grab_t := 0.0
+var _was_holding := false
 
 
 func _ready() -> void:
@@ -25,6 +30,9 @@ func _ready() -> void:
 	add_child(_pad)
 	for b in BUTTONS:
 		_buttons.append(_button(b[0], b[1], b[3], b[4]))
+	var grab := _buttons[1]
+	grab.action = ""  # handled as a toggle below
+	grab.pressed.connect(func(): _set_grab(not _grab_on))
 	var pause := _button("II", "pause", 40.0, Color(1, 1, 1, 0.7))
 	pause.set_meta("top", true)
 	_buttons.append(pause)
@@ -69,6 +77,32 @@ func _layout() -> void:
 	_buttons[-1].position = Vector2(size.x * 0.5 + 110.0, 22.0)  # pause, next to the clock
 
 
+func _set_grab(on: bool) -> void:
+	_grab_on = on
+	_grab_t = 0.0
+	_was_holding = false
+	if on:
+		Input.action_press("grab")
+	else:
+		Input.action_release("grab")
+	_buttons[1].modulate = Color(1.6, 1.6, 1.6) if on else Color.WHITE
+
+
+func _process(dt: float) -> void:
+	if not _grab_on:
+		return
+	var me: Beast = null
+	for b: Beast in get_tree().get_nodes_in_group("beasts"):
+		if b.pid == me_id:
+			me = b
+	var holding := me != null and (me.holding != null or me.net_holding)
+	_grab_t += dt
+	# Let go once whatever we held is gone (bowled, thrown, knocked loose), or if we grabbed nothing.
+	if (_was_holding and not holding) or (not holding and _grab_t > 2.0) or (me and me.state >= Beast.BALL):
+		_set_grab(false)
+	_was_holding = _was_holding or holding
+
+
 func _input(e: InputEvent) -> void:
 	var half := get_viewport().get_visible_rect().size.x * 0.45
 	if e is InputEventScreenTouch:
@@ -103,3 +137,4 @@ func _draw_pad() -> void:
 
 func _exit_tree() -> void:
 	_steer(Vector2.ZERO)
+	Input.action_release("grab")

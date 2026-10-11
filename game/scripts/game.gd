@@ -52,7 +52,9 @@ func _ready() -> void:
 	hud = Hud.new()
 	add_child(hud)
 	if OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args():
-		add_child(TouchControls.new())
+		var tc := TouchControls.new()
+		tc.me_id = Net.my_id()
+		add_child(tc)
 	Music.duck(PRE_GAME)
 	Net.players_changed.connect(_sync_roster)
 	_sync_roster()
@@ -443,7 +445,7 @@ func _touchify(items: Array) -> Array:
 	## Same prompts, phrased for the on-screen buttons.
 	if not (OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args()):
 		return items
-	var names := {"LMB": "PUNCH", "HOLD LMB": "HOLD PUNCH", "RMB": "GRAB", "HOLD RMB": "HOLD GRAB", "SHIFT": "DIVE", "RELEASE": "LET GO"}
+	var names := {"LMB": "PUNCH", "HOLD LMB": "HOLD PUNCH", "RMB": "TAP GRAB", "HOLD RMB": "TAP GRAB", "SHIFT": "DIVE", "RELEASE": "LET GO"}
 	return items.map(func(it): return [names.get(it[0], it[0])] + it.slice(1))
 
 
