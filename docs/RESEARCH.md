@@ -36,6 +36,20 @@ names: no tuning assets (`data.unity3d`, Unity scenes) were decoded, so all our 
 | `ImpactFrameController`, `ScreenshakeSettings{Duration, DistanceIntensityFactor}`, `KnockedOutVfx.SetColoredStarCount` | Hit-stop and screen shake that fade with distance, and stars over knocked-out heads. |
 | `ItemType`: DuelingPistol, ElephantGun, Airhorn, SpringBoots, RocketLauncher, Landmine, FreezeBomb, … | Items are arcade-style and over the top. Our first weapon fits the theme: **pick up a bowling pin and use it as a club.** |
 
+## Super Battle Golf: UI, music, cosmetics (second pass)
+
+| Observation | What we take from it |
+|---|---|
+| `TeeOffCountdown`, `MatchEndCountdown{preOvertimeUrgencyThreshold, urgencyPopSizeFactor, urgencyColor}` | A 3-2-1-BOWL! countdown at the start. In the last 10 s the clock pops and turns red every second. |
+| FMOD strings: one theme per course plus `Main Menu Music`; music-bank timelines marked `Hurry version` + `Transition`; announcer `10 Seconds Remaining`, `Overtime` | Music has a menu theme, a match theme, a **hurry version** for the final 30 s (with a HURRY UP! banner) and a victory jingle. |
+| `UiSfx.Type`: MainMenuButton, PauseMenuButton, SettingsTab, Slider, StartMatch...; `MainMenuButton{animator, pointerHover}` | Every button bounces and tilts on hover with a tick, and pops on click. |
+| `InfoFeedMessage{preIconText, icon1, icon2, postIconText}` | Kill-feed chips: [name] [VERB pill] [name]. |
+| `SwingPowerBarUi{overchargeFill, overchargedPopScaleAddition, shakeTween}` | A power bar floats over your bowler while you wind up. It wobbles and shows MAX! at full charge. |
+| `ButtonPrompt`, `WorldspaceIconUi{offscreenArrow, distanceLabel}` | Context key prompts (GRAB THEM, WIND UP / BOWL!, GET BEHIND THE FOUL LINE) and a bouncing GRAB! marker over downed players. |
+| `ScoreboardEntry{ranking, knockouts, knockoutMedal, wins, hostIcon}` | Ranked scoreboard rows with a crown for the leader. Results show points, strikes, spares and KOs. |
+| `MainMenu{background, panAmount}`, `MainMenuScenario` | The menu sits over a live alley where bots brawl and bowl. |
+| `PlayerCosmetics` / `Loadout`: Head, Hat, Face, FaceLower, Body, Shoes, Eyes, Mouth, Brows, Cheeks, SkinColor, VictoryDance...; `CustomizationMenuPreview` | Skins are a loadout of slots (hat, eyes, mouth, outfit, gloves, shoes, accent) shown on a turntable preview. The winner dances on the results screen. |
+
 ## What Bowling your Friends uses
 
 - **Body:** wobbly upright body kept up by a torque spring, plus procedural jelly limbs (GB). Hits physically knock you around.

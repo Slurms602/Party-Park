@@ -9,14 +9,17 @@ const STRIKE_BONUS := 10
 const SPARE_BONUS := 5
 const FLATTEN_POINTS := 2
 const COMEBACK_GAP := 30  # Super Battle Golf-style comeback bonus for whoever is far behind
+const PRE_GAME := 3.0  # 3, 2, 1, BOWL! (Super Battle Golf's tee-off countdown)
+const HURRY_AT := 30.0  # switch to the hurry version of the music
 
 var arena: Arena
 var hud: Hud
 var cam: Camera3D
 var beasts := {}  # pid -> Beast
 var inputs := {}  # pid -> latest input (host)
-var scores := {}  # pid -> {total, rolls, streak}
+var scores := {}  # pid -> {total, rolls, streak, strikes, spares, kos}
 var time_left := 180.0
+var pre := PRE_GAME
 var server := false
 var over := false
 var _server_time := 0.0
@@ -29,6 +32,9 @@ var _follow: Beast = null
 var _follow_t := 0.0
 var _dinged := false
 var _ready_peers := {}  # host: clients whose Game node exists, so RPCs to it can land
+var _pre_shown := -1
+var _hurried := false
+var _match_t := 0.0
 
 
 func _ready() -> void:
@@ -45,6 +51,7 @@ func _ready() -> void:
 	cam.current = true
 	hud = Hud.new()
 	add_child(hud)
+	Music.duck(PRE_GAME)
 	Net.players_changed.connect(_sync_roster)
 	_sync_roster()
 	if not server:
@@ -60,13 +67,15 @@ func _sync_roster() -> void:
 			b.global_position = arena.spawn_point(beasts.size())
 			b.immune = Beast.IMMUNE_TIME
 			beasts[pid] = b
+			if pid == Net.my_id():
+				b.mark_local()
 			if server:
 				b.knocked_out.connect(_on_ko)
 				b.flattened.connect(_on_flattened)
 				b.fx.connect(func(clip, pos, vol): _send(_ev_fx, [clip, pos, vol]))
 				b.hurt.connect(func(v, by, dir, power, label): _send(_ev_hit, [v.pid, by, dir, power, label]))
 		if not scores.has(pid):
-			scores[pid] = {total = 0, rolls = [], streak = 0}
+			scores[pid] = {total = 0, rolls = [], streak = 0, strikes = 0, spares = 0, kos = 0}
 	for pid in beasts.keys():
 		if not Net.players.has(pid):
 			var b: Beast = beasts[pid]
@@ -90,12 +99,13 @@ func _physics_process(dt: float) -> void:
 	if not server:
 		return
 	_server_time += dt
+	pre = maxf(pre - dt, 0.0)
 	for pid in beasts:
 		var b: Beast = beasts[pid]
 		var inp: Dictionary = Bot.think(b, arena, dt) if Net.players[pid].bot else inputs.get(pid, {})
-		b.sim(inp, dt)
+		b.sim(inp if pre <= 0.0 else {}, dt)  # everyone waits for the countdown
 	arena.server_update(dt, beasts.values())
-	if not over:
+	if not over and pre <= 0.0:
 		time_left -= dt
 		if time_left <= 0.0:
 			time_left = 0.0
@@ -106,7 +116,7 @@ func _physics_process(dt: float) -> void:
 	_snap_acc += dt
 	if _snap_acc >= SNAP_INTERVAL:
 		_snap_acc = 0.0
-		_send(_snap, [_server_time, _pack_beasts(), time_left], false)
+		_send(_snap, [_server_time, _pack_beasts(), time_left, pre], false)
 		_send(_snap_pins, [_server_time, arena.pin_snapshot()], false)
 
 
@@ -134,12 +144,16 @@ func _client_input(mv: Vector2, bits: int) -> void:
 func _on_roll(lane: int, bowler: int, knocked: int, kind: String) -> void:
 	if over or not scores.has(bowler):
 		return
-	var pts := knocked + (STRIKE_BONUS if kind == "strike" else SPARE_BONUS if kind == "spare" else 0)
+	var pts := 0 if kind == "foul" else knocked + (STRIKE_BONUS if kind == "strike" else SPARE_BONUS if kind == "spare" else 0)
 	var comeback: bool = _top_score() - scores[bowler].total >= COMEBACK_GAP and pts > 0
 	if comeback:
 		pts = int(ceil(pts * 1.5))
 	scores[bowler].total += pts
-	scores[bowler].rolls.append("X" if kind == "strike" else "/" if kind == "spare" else "-" if knocked == 0 else str(knocked))
+	scores[bowler].rolls.append({strike = "X", spare = "/", foul = "F"}.get(kind, "-" if knocked == 0 else str(knocked)))
+	if kind == "strike":
+		scores[bowler].strikes += 1
+	elif kind == "spare":
+		scores[bowler].spares += 1
 	_send(_ev_scores, [scores])
 	_send(_ev_roll, [lane, bowler, knocked, kind, pts, comeback])
 
@@ -147,15 +161,14 @@ func _on_roll(lane: int, bowler: int, knocked: int, kind: String) -> void:
 func _on_ko(victim: Beast, by: int) -> void:
 	if scores.has(victim.pid):
 		scores[victim.pid].streak = 0
-	if by == 0 or by == victim.pid or not scores.has(by):
-		_send(_ev_feed, ["%s curled up" % victim.display_name, victim.color])
+	if by == 0 or by == victim.pid or not scores.has(by) or not Net.players.has(by):
+		_send(_ev_feed, [victim.display_name, victim.color, "CURLED UP", Color("6a5a8a"), "", Color.WHITE])
 		return
 	scores[by].streak += 1
-	var who: String = Net.players[by].name if Net.players.has(by) else "?"
-	var line := "%s knocked out %s" % [who, victim.display_name]
-	if scores[by].streak == 3:
-		line += "  — ON A RAMPAGE!"
-	_send(_ev_feed, [line, Net.players[by].color if Net.players.has(by) else Color.WHITE])
+	scores[by].kos += 1
+	var rampage: bool = scores[by].streak >= 3
+	_send(_ev_feed, [Net.players[by].name, Net.players[by].color, "RAMPAGE KO" if rampage else "KO", Color("ff3b4e") if not rampage else Color("ff8c2a"),
+		victim.display_name, victim.color])
 
 
 func _on_flattened(by: int, victim: Beast) -> void:
@@ -163,7 +176,7 @@ func _on_flattened(by: int, victim: Beast) -> void:
 		return
 	scores[by].total += FLATTEN_POINTS
 	_send(_ev_scores, [scores])
-	_send(_ev_feed, ["%s bowled over %s  +%d" % [Net.players[by].name, victim.display_name, FLATTEN_POINTS], Color("ffe14d")])
+	_send(_ev_feed, [Net.players[by].name, Net.players[by].color, "BOWLED OVER +%d" % FLATTEN_POINTS, Color("c79a00"), victim.display_name, victim.color])
 
 
 func _end_match() -> void:
@@ -193,9 +206,9 @@ func _pack_beasts() -> Array:
 	var out := []
 	for pid in beasts:
 		var b: Beast = beasts[pid]
-		var flags := int(b.holding != null) | int(b.reaching) << 1 | int(b.leader) << 3
+		var flags := int(b.holding != null) | int(b.reaching) << 1 | int(b.holding is Beast and b.holding.state == Beast.CARRIED) << 2 | int(b.leader) << 3
 		out.append([pid, b.global_position, b.global_basis.get_rotation_quaternion(), b.state, b.facing,
-			b.charge if b.charging else -1.0, b.punch_t[0], b.punch_t[1], flags, b.health, b.immune, b.last_toucher])
+			b.charge if b.charging else -1.0, b.punch_t[0], b.punch_t[1], flags, b.health, b.immune, b.last_toucher, b.ko_time])
 	return out
 
 
@@ -219,8 +232,8 @@ func _hello() -> void:
 
 
 @rpc("authority", "unreliable_ordered")
-func _snap(t: float, bs: Array, tl: float) -> void:
-	_snaps.append([t, bs, tl])
+func _snap(t: float, bs: Array, tl: float, p: float) -> void:
+	_snaps.append([t, bs, tl, p])
 	if _snaps.size() > 30:
 		_snaps.pop_front()
 
@@ -312,8 +325,8 @@ func _popup(pos: Vector3, text: String, col: Color) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func _ev_feed(text: String, col: Color) -> void:
-	hud.feed(text, col)
+func _ev_feed(a: String, a_col: Color, verb: String, verb_col: Color, b: String, b_col: Color) -> void:
+	hud.feed_event(a, a_col, verb, verb_col, b, b_col)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -327,28 +340,38 @@ func _ev_roll(lane: int, bowler: int, knocked: int, kind: String, pts: int, come
 	var who: String = Net.players[bowler].name if Net.players.has(bowler) else "?"
 	var col: Color = Net.players[bowler].color if Net.players.has(bowler) else Color.WHITE
 	var pos := Vector3(arena.lane_x(lane), 1.0, Arena.HEAD_PIN_Z)
-	var extra := "  COMEBACK x1.5" if comeback else ""
+	var extra := "  ·  COMEBACK x1.5" if comeback else ""
 	match kind:
 		"strike":
-			hud.big("STRIKE!", Color("ffe14d"), "%s  +%d%s" % [who, pts, extra])
+			hud.callout("STRIKE!", Color("ffe14d"), "%s  +%d%s" % [who, pts, extra], true)
 			arena.screen_board.flash("STRIKE!", Color("ffe14d"))
+			Music.duck(1.4)
 			Sfx.play_ui("strike")
 		"spare":
-			hud.big("SPARE!", Color("2de2ff"), "%s  +%d%s" % [who, pts, extra])
+			hud.callout("SPARE!", Color("2de2ff"), "%s  +%d%s" % [who, pts, extra])
 			arena.screen_board.flash("SPARE!", Color("2de2ff"))
+			Music.duck(1.0)
 			Sfx.play_ui("spare")
+		"foul":
+			hud.callout("FOUL!", Color("ff3b4e"), "%s bowled from past the line: no points" % who)
+			arena.screen_board.flash("FOUL!", Color("ff3b4e"))
+			arena.flash_foul()
+			Sfx.play_ui("foul")
 		"gutter":
-			hud.feed("%s threw a gutter ball" % who, col)
+			hud.feed_event(who, col, "GUTTER BALL", Color("6a5a8a"))
 			Sfx.play("buzzer", pos, -6.0)
 		_:
-			hud.feed("%s knocked %d pins  +%d%s" % [who, knocked, pts, extra], col)
+			hud.feed_event(who, col, "%d PINS  +%d" % [knocked, pts], Color("2a7fff"), extra.strip_edges().trim_prefix("·  "), Color.WHITE)
 
 
 @rpc("authority", "call_local", "reliable")
 func _ev_end() -> void:
 	over = true
-	hud.results(_rows())
-	Sfx.play_ui("strike")
+	var rows := _rows()
+	var top: int = rows[0].pid if not rows.is_empty() else 0
+	var p: Dictionary = Net.players.get(top, {color = Color.WHITE, skin = {}})
+	hud.results(rows, p.color, p.skin)
+	Music.play("victory", 0.2)
 
 
 # ================================================================= presentation
@@ -357,16 +380,61 @@ func _process(dt: float) -> void:
 	if not server:
 		_interpolate(dt)
 	var me: Beast = beasts.get(Net.my_id())
+	_match_flow(dt)
 	if me:
 		var full := me.charging and me.charge >= Beast.FULL_CHARGE - 0.01
 		if full and not _dinged:
 			Sfx.play_ui("ding", -4.0)  # fully charged
 		_dinged = full
-		hud.set_me(me.health, me.charge / Beast.FULL_CHARGE if me.charging else -1.0, me.state >= Beast.BALL, me.net_holding or me.holding != null)
-	hud.set_time(time_left)
+		hud.set_me(me.display_name, me.color, me.health, me.state >= Beast.BALL, maxf(me.ko_time, 0.0))
+		hud.set_charge(cam.unproject_position(me.global_position + Vector3.UP * 1.9), me.charge / Beast.FULL_CHARGE if me.charging else -1.0)
+		hud.set_prompts(_prompts(me))
+	hud.set_time(time_left if pre <= 0.0 else Net.match_seconds)
 	arena.screen_board.time_left = time_left
 	arena.screen_board.queue_redraw()
 	_update_camera(dt, me)
+
+
+func _match_flow(dt: float) -> void:
+	## Countdown, hurry-up and music cues, run on every peer from the replicated clock.
+	var p := int(ceil(pre))
+	if p != _pre_shown:
+		if p > 0:
+			hud.countdown(str(p), Color.WHITE)
+			Sfx.play_ui("beep")
+		elif _pre_shown > 0:
+			hud.countdown("BOWL!", Color("ffe14d"), 180)
+			Sfx.play_ui("go")
+			Music.play("match", 0.3)
+		_pre_shown = p
+	if pre <= 0.0 and not over:
+		_match_t += dt
+		if _pre_shown == 0 and Music.current == "menu":  # joined mid-match
+			Music.play("match", 0.5)
+		if time_left <= HURRY_AT and not _hurried:
+			_hurried = true
+			hud.banner("HURRY UP!", Color("ff5a6a"))
+			Sfx.play_ui("hurry")
+			Music.play("hurry", 0.8)
+
+
+func _prompts(me: Beast) -> Array:
+	## Context button prompts for the local player.
+	if pre > 0.0 or over:
+		return []
+	if me.state >= Beast.BALL:
+		return [["MASH", "ANY BUTTON TO WAKE UP"]]
+	if me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED):
+		var out := [["HOLD LMB", "WIND UP"], ["RELEASE", "BOWL!"]]
+		if me.global_position.z < 0.3:
+			out.append(["!", "GET BEHIND THE FOUL LINE", true])
+		return out
+	for b: Beast in beasts.values():
+		if b != me and b.state == Beast.BALL and b.global_position.distance_to(me.global_position) < 2.8:
+			return [["HOLD RMB", "GRAB THEM"]]
+	if _match_t < 15.0:
+		return [["LMB", "PUNCH"], ["HOLD LMB", "HAYMAKER"], ["RMB", "GRAB"], ["SHIFT", "DIVE"]]
+	return []
 
 
 func _interpolate(dt: float) -> void:
@@ -380,6 +448,7 @@ func _interpolate(dt: float) -> void:
 	var b: Array = s[1]
 	var w: float = s[2]
 	time_left = b[2]
+	pre = b[3]
 	if not _pin_snaps.is_empty():
 		var p := _bracket(_pin_snaps)
 		arena.apply_pins(p[0][1], p[1][1], p[2])
@@ -399,10 +468,12 @@ func _interpolate(dt: float) -> void:
 		bst.punch_t = [e[6], e[7]]
 		bst.net_holding = e[8] & 1 != 0
 		bst.reaching = e[8] & 2 != 0
+		bst.net_carrying = e[8] & 4 != 0
 		bst.leader = e[8] & 8 != 0
 		bst.health = e[9]
 		bst.immune = e[10]
 		bst.last_toucher = e[11]
+		bst.ko_time = e[12]
 
 
 func _bracket(buf: Array) -> Array:
@@ -445,7 +516,9 @@ func _rows() -> Array:
 	var rows := []
 	for pid in scores:
 		if Net.players.has(pid):
-			rows.append({name = Net.players[pid].name, color = Net.players[pid].color, total = scores[pid].total, rolls = scores[pid].rolls})
+			var sc: Dictionary = scores[pid]
+			rows.append({pid = pid, name = Net.players[pid].name, color = Net.players[pid].color, total = sc.total, rolls = sc.rolls,
+				me = pid == Net.my_id(), strikes = sc.get("strikes", 0), spares = sc.get("spares", 0), kos = sc.get("kos", 0)})
 	rows.sort_custom(func(x, y): return x.total > y.total)
 	return rows
 

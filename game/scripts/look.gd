@@ -2,6 +2,25 @@ class_name Look
 ## Shared materials: shiny toy bodies with a dark ink outline.
 
 static var _outline: StandardMaterial3D
+static var _fonts := {}
+
+
+static func font(bold := false) -> Font:
+	## Fredoka: round and friendly, for body text.
+	var key := "bold" if bold else "regular"
+	if not _fonts.has(key):
+		var v := FontVariation.new()
+		v.base_font = load("res://assets/fonts/Fredoka.ttf")
+		v.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 700 if bold else 500}
+		_fonts[key] = v
+	return _fonts[key]
+
+
+static func title_font() -> Font:
+	## Lilita One: chunky display type for titles and callouts.
+	if not _fonts.has("title"):
+		_fonts.title = load("res://assets/fonts/LilitaOne-Regular.ttf")
+	return _fonts.title
 
 
 static func outline() -> StandardMaterial3D:

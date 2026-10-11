@@ -84,6 +84,7 @@ void fragment() {
 var lanes: Array[Dictionary] = []
 var pins: Array[RigidBody3D] = []
 var screen_board: Control  # the overhead scoreboard lives in a SubViewport
+var _foul_mat: StandardMaterial3D
 var _server := false
 
 
@@ -94,6 +95,12 @@ func setup(is_server: bool) -> void:
 	for i in LANES:
 		_lane(i)
 	_decor()
+
+
+func flash_foul() -> void:
+	var tw := create_tween().set_loops(5)
+	tw.tween_property(_foul_mat, "emission_energy_multiplier", 16.0, 0.1)
+	tw.tween_property(_foul_mat, "emission_energy_multiplier", 4.0, 0.1)
 
 
 func lane_x(i: int) -> float:
@@ -132,6 +139,7 @@ func _update_lane(lane: Dictionary, dt: float, beasts: Array) -> void:
 					and b.linear_velocity.z < -2.5 and absf(b.linear_velocity.x) < -b.linear_velocity.z * 0.5 \
 					and b.projectile_t > 0.0 and standing(lane) > 0:  # bowled (or punted hard) down the lane
 				lane.ball = b
+				lane.foul = b.foul
 				lane.bowler = b.last_toucher
 				lane.before = standing(lane)
 				lane.t = 0.0
@@ -161,7 +169,9 @@ func _finish_roll(lane: Dictionary) -> void:
 	var left := standing(lane)
 	var knocked: int = lane.before - left
 	var kind := ""
-	if knocked == 10:
+	if lane.foul:
+		kind = "foul"  # released past the foul line: the pins still fall, but it scores nothing
+	elif knocked == 10:
 		kind = "strike"
 	elif left == 0 and knocked > 0:
 		kind = "spare"
@@ -316,7 +326,8 @@ func _floor_and_walls() -> void:
 	carpet.shader = Shader.new()
 	carpet.shader.code = CARPET_SHADER
 	_solid(Vector3(HALF_W * 2.0, 1.0, APPROACH + 10.0), Vector3(0, -0.5, APPROACH * 0.5 + 5.0), carpet, 1.0)
-	_solid(Vector3(HALF_W * 2.0, 0.02, 0.12), Vector3(0, 0.005, -0.06), Look.neon(Color("ff2d55"), 4.0))  # foul line
+	_foul_mat = Look.neon(Color("ff2d55"), 4.0)
+	_solid(Vector3(HALF_W * 2.0, 0.02, 0.12), Vector3(0, 0.005, -0.06), _foul_mat)  # foul line
 	var wall := Look.toy(Color("1b0f3a"), 0.8, false)
 	var depth := APPROACH + LANE_LEN + 13.0  # runs past the camera, which sits behind the back rail
 	var mid_z := (APPROACH + 10.0 - LANE_LEN - 3.0) * 0.5
@@ -354,8 +365,8 @@ func _lane(i: int) -> void:
 	light.light_energy = 2.2
 	light.light_color = Color("fff3e0")
 	add_child(light)
-	var lane := {i = i, pins = [], rack = [], ball = null, bowler = 0, before = 10, t = 0.0, done_t = 0.0, rerack = -1.0, racking = false}
-	var pin_mesh := _pin_mesh()
+	var lane := {i = i, pins = [], rack = [], ball = null, bowler = 0, before = 10, t = 0.0, done_t = 0.0, rerack = -1.0, racking = false, foul = false}
+	var pin_mesh := Arena.pin_mesh()
 	for row in 4:
 		for k in row + 1:
 			var spot := Vector3(x + (k - row * 0.5) * PIN_GAP, 0.0, HEAD_PIN_Z - row * PIN_GAP * 0.866)
@@ -384,13 +395,7 @@ func _pin(spot: Vector3, m: Mesh) -> RigidBody3D:
 	cs.shape = cyl
 	cs.position.y = 0.6
 	p.add_child(cs)
-	if _pin_mat == null:
-		_pin_mat = Look.toy(Color.WHITE, 0.15)
-		_pin_mat.vertex_color_use_as_albedo = true
-		_pin_mat.emission_enabled = true  # pins glow a little under the blacklight
-		_pin_mat.emission = Color("fff6ea")
-		_pin_mat.emission_energy_multiplier = 0.35
-	Look.mesh(p, m, _pin_mat)
+	Look.mesh(p, m, Arena.pin_material())
 	add_child(p)
 	p.global_position = spot
 	pins.append(p)
@@ -399,7 +404,18 @@ func _pin(spot: Vector3, m: Mesh) -> RigidBody3D:
 
 static var _pin_cache: ArrayMesh
 
-func _pin_mesh() -> ArrayMesh:
+
+static func pin_material() -> StandardMaterial3D:
+	if _pin_mat == null:
+		_pin_mat = Look.toy(Color.WHITE, 0.15)
+		_pin_mat.vertex_color_use_as_albedo = true
+		_pin_mat.emission_enabled = true  # pins glow a little under the blacklight
+		_pin_mat.emission = Color("fff6ea")
+		_pin_mat.emission_energy_multiplier = 0.35
+	return _pin_mat
+
+
+static func pin_mesh() -> ArrayMesh:
 	# A lathe-turned pin: (height, radius) profile revolved, with two red neck stripes.
 	if _pin_cache:
 		return _pin_cache

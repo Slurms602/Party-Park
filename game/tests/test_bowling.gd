@@ -58,6 +58,22 @@ func _run() -> void:
 	await _drive(all, {}, int((Arena.RERACK_PARTIAL + 2.0) / DT))
 	_check(arena.standing(arena.lanes[1]) == 10, "pins are re-racked")
 
+	# Foul: carry the ball past the line and bowl from there.
+	bowler.global_position = Vector3(x, 0.9, -1.5)
+	victim.immune = 0.0
+	victim.global_position = Vector3(x, 0.9, -2.6)
+	await _drive(all, {}, 30)
+	victim.take_hit(1, Vector3.FORWARD, 500.0, 0.5)
+	await _drive(all, {}, 20)
+	await _drive(all, {grab = true}, 3)
+	await _drive(all, {grab = true, punch = true}, 50)
+	await _drive(all, {grab = true}, 1)
+	for i in 600:
+		if rolls.size() > 1:
+			break
+		await _drive(all, {}, 1)
+	_check(rolls.size() == 2 and rolls[1][3] == "foul", "bowling from past the foul line is a foul (%s)" % [rolls.slice(1)])
+
 	print("ALL PASSED" if _fails == 0 else "%d FAILED" % _fails)
 	quit(1 if _fails else 0)
 

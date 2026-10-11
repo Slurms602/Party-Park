@@ -13,8 +13,7 @@ const COLORS := [Color("ff4d6d"), Color("4dabff"), Color("ffd23f"), Color("3ddc9
 	Color("b980ff"), Color("ff8c42"), Color("ff7eb6"), Color("5ef2f2")]
 const BOT_NAMES := ["Gutterball", "Split", "Turkey", "Lefty", "Big Lebowski", "Pinhead", "Sparetire", "Strikeout"]
 
-var players := {}  # peer id (bots < 0) -> {name, color, bot}
-var my_name := "Bowler"
+var players := {}  # peer id (bots < 0) -> {name, color, bot, skin}
 var in_match := false
 var match_seconds := 180.0
 var _next_bot := -1
@@ -23,30 +22,28 @@ var _next_bot := -1
 func _ready() -> void:
 	multiplayer.peer_connected.connect(func(_id): pass)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	multiplayer.connected_to_server.connect(func(): _register.rpc_id(1, my_name))
+	multiplayer.connected_to_server.connect(func(): _register.rpc_id(1, Prefs.player_name, Prefs.skin))
 	multiplayer.connection_failed.connect(func(): leave(); status.emit("Could not connect."))
 	multiplayer.server_disconnected.connect(func(): leave(); status.emit("The host left."))
 
 
-func host(player_name: String) -> String:
+func host() -> String:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(PORT, MAX_PLAYERS)
 	if err != OK:
 		return "Could not host on port %d (%s)." % [PORT, error_string(err)]
 	multiplayer.multiplayer_peer = peer
-	my_name = _clean(player_name)
-	players = {1: _entry(my_name, false)}
+	players = {1: _entry(Prefs.player_name, false, Prefs.skin)}
 	players_changed.emit()
 	return ""
 
 
-func join(player_name: String, ip: String) -> String:
+func join(ip: String) -> String:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(ip.strip_edges(), PORT)
 	if err != OK:
 		return "Could not connect to %s (%s)." % [ip, error_string(err)]
 	multiplayer.multiplayer_peer = peer
-	my_name = _clean(player_name)
 	return ""
 
 
@@ -77,7 +74,8 @@ func my_id() -> int:
 func add_bot() -> void:
 	if not is_host() or players.size() >= MAX_PLAYERS:
 		return
-	players[_next_bot] = _entry(BOT_NAMES[(-_next_bot - 1) % BOT_NAMES.size()], true)
+	var i := -_next_bot - 1
+	players[_next_bot] = _entry(BOT_NAMES[i % BOT_NAMES.size()], true, Skins.PRESETS.values()[(i + 1) % Skins.PRESETS.size()])
 	_next_bot -= 1
 	_sync_players.rpc(players)
 
@@ -99,14 +97,22 @@ func end_match() -> void:
 		_end.rpc()
 
 
-func _entry(n: String, bot: bool) -> Dictionary:
+func update_me() -> void:
+	## Push a changed name or skin from Prefs to everyone.
+	if is_host():
+		_update(Prefs.player_name, Prefs.skin)
+	elif is_online():
+		_update.rpc_id(1, Prefs.player_name, Prefs.skin)
+
+
+func _entry(n: String, bot: bool, skin = {}) -> Dictionary:
 	var used := players.values().map(func(p): return p.color)
 	var color: Color = COLORS[0]
 	for c in COLORS:
 		if not used.has(c):
 			color = c
 			break
-	return {name = n, color = color, bot = bot}
+	return {name = _clean(n), color = color, bot = bot, skin = Skins.sanitize(skin)}
 
 
 func _clean(n: String) -> String:
@@ -115,12 +121,22 @@ func _clean(n: String) -> String:
 
 
 @rpc("any_peer", "reliable")
-func _register(player_name: String) -> void:
+func _update(player_name: String, skin: Dictionary) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	id = 1 if id == 0 else id
+	if players.has(id):
+		players[id].name = _clean(player_name)
+		players[id].skin = Skins.sanitize(skin)
+		_sync_players.rpc(players)
+
+
+@rpc("any_peer", "reliable")
+func _register(player_name: String, skin: Dictionary) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	if players.size() >= MAX_PLAYERS:
 		multiplayer.multiplayer_peer.disconnect_peer(id)
 		return
-	players[id] = _entry(_clean(player_name), false)
+	players[id] = _entry(player_name, false, skin)
 	_sync_players.rpc(players)
 	if in_match:  # drop-in: late joiners spawn straight into the running match
 		_start.rpc_id(id, match_seconds)

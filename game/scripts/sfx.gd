@@ -4,7 +4,8 @@ extends Node
 const RATE := 22050
 var _clips := {}
 var _pool: Array[AudioStreamPlayer3D] = []
-var _ui: AudioStreamPlayer
+var _ui: Array[AudioStreamPlayer] = []
+var _ui_next := 0
 
 
 func _ready() -> void:
@@ -19,15 +20,27 @@ func _ready() -> void:
 	_clips.spare = _make(0.8, _arp([392.0, 523.0, 659.0]))
 	_clips.thud = _make(0.2, func(t): return sin(TAU * 50.0 * t) * exp(-t * 20.0))
 	_clips.ding = _make(0.3, func(t): return (sin(TAU * 1760.0 * t) + 0.5 * sin(TAU * 2640.0 * t)) * exp(-t * 12.0) * 0.4)
+	_clips.ui_hover = _make(0.05, func(t): return sin(TAU * 1500.0 * t) * exp(-t * 90.0) * 0.35)
+	_clips.ui_click = _make(0.12, func(t): return sin(TAU * (500.0 + 900.0 * t / 0.12) * t) * exp(-t * 30.0) * 0.5)
+	_clips.ui_back = _make(0.12, func(t): return sin(TAU * (900.0 - 600.0 * t / 0.12) * t) * exp(-t * 30.0) * 0.5)
+	_clips.beep = _make(0.18, func(t): return signf(sin(TAU * 660.0 * t)) * 0.25 * exp(-t * 10.0))
+	_clips.go = _make(0.5, func(t): return (signf(sin(TAU * 990.0 * t)) * 0.2 + sin(TAU * 1980.0 * t) * 0.2) * exp(-t * 4.0))
+	_clips.tick = _make(0.08, func(t): return sin(TAU * 1200.0 * t) * exp(-t * 50.0) * 0.6)
+	_clips.hurry = _make(1.2, func(t): return sin(TAU * (500.0 + 300.0 * sin(TAU * 4.0 * t)) * t) * 0.3 * minf(t * 4.0, 1.0) * (1.0 - t / 1.2))
+	_clips.foul = _make(0.7, func(t): return (signf(sin(TAU * 140.0 * t)) + signf(sin(TAU * 147.0 * t))) * 0.15 * (1.0 - t / 0.7))
 	_clips.buzzer = _make(1.0, func(t): return signf(sin(TAU * 110.0 * t)) * 0.25 * (1.0 - t))
 	for i in 24:
 		var p := AudioStreamPlayer3D.new()
 		p.unit_size = 8.0
 		p.max_distance = 60.0
+		p.bus = "SFX"
 		add_child(p)
 		_pool.append(p)
-	_ui = AudioStreamPlayer.new()
-	add_child(_ui)
+	for i in 6:  # a few voices so UI sounds don't cut each other off
+		var u := AudioStreamPlayer.new()
+		u.bus = "SFX"
+		add_child(u)
+		_ui.append(u)
 
 
 func play(clip: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
@@ -44,9 +57,11 @@ func play(clip: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> void:
 
 
 func play_ui(clip: String, volume_db := 0.0) -> void:
-	_ui.stream = _clips.get(clip)
-	_ui.volume_db = volume_db
-	_ui.play()
+	var u := _ui[_ui_next]
+	_ui_next = (_ui_next + 1) % _ui.size()
+	u.stream = _clips.get(clip)
+	u.volume_db = volume_db
+	u.play()
 
 
 func _n() -> float:
