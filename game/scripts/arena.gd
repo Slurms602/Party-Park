@@ -129,7 +129,8 @@ func _update_lane(lane: Dictionary, dt: float, beasts: Array) -> void:
 		for b: Beast in beasts:
 			if b.is_rollable() and b.last_toucher != 0 and lane_at(b.global_position.x) == lane.i \
 					and b.global_position.z < -0.3 and b.global_position.z > HEAD_PIN_Z + 1.0 \
-					and b.linear_velocity.z < -2.5 and standing(lane) > 0:
+					and b.linear_velocity.z < -2.5 and absf(b.linear_velocity.x) < -b.linear_velocity.z * 0.5 \
+					and b.projectile_t > 0.0 and standing(lane) > 0:  # bowled (or punted hard) down the lane
 				lane.ball = b
 				lane.bowler = b.last_toucher
 				lane.before = standing(lane)
@@ -190,9 +191,14 @@ func _settled(lane: Dictionary) -> bool:
 
 
 func _rerack(lane: Dictionary, beasts: Array) -> void:
+	var x := lane_x(lane.i)
 	for b: Beast in beasts:
 		if lane.pins.has(b.holding):
 			b.release_hold()
+		# The sweep bar clears the deck into the pit, so pins never drop onto anyone.
+		if absf(b.global_position.x - x) < LANE_W * 0.5 + GUTTER_W and b.global_position.z < HEAD_PIN_Z + 1.5 \
+				and b.global_position.z > -LANE_LEN and b.state != Beast.CARRIED:
+			b.linear_velocity = Vector3(0, 1.5, -7.0)
 	lane.racking = true
 	var tw := create_tween().set_parallel()
 	for k in 10:
@@ -318,13 +324,11 @@ func _floor_and_walls() -> void:
 		_solid(Vector3(0.6, 7.0, depth), Vector3(s * (HALF_W + 0.3), 3.0, mid_z), wall)
 		Look.mesh(self, Look.box(Vector3(0.08, 0.08, depth)), Look.neon(Color("ff3fb4") if s < 0 else Color("2de2ff")),
 			Vector3(s * HALF_W, 2.6, mid_z))
-	# The back wall is invisible so the camera behind it can see; a low neon rail marks it.
+	# The back wall is invisible so the camera behind it can see; a neon floor strip marks it.
 	var back := BoxShape3D.new()
 	back.size = Vector3(HALF_W * 2.0, 8.0, 0.6)
 	_body(back, Vector3(0, 3.5, APPROACH + 0.3))
-	Look.mesh(self, Look.box(Vector3(HALF_W * 2.0, 0.08, 0.08)), Look.neon(Color("ffe14d"), 1.2), Vector3(0, 1.1, APPROACH))
-	for x in range(-8, 9, 2):
-		Look.mesh(self, Look.box(Vector3(0.06, 1.1, 0.06)), wall, Vector3(x, 0.55, APPROACH))
+	Look.mesh(self, Look.box(Vector3(HALF_W * 2.0, 0.02, 0.15)), Look.neon(Color("ffe14d"), 1.5), Vector3(0, 0.01, APPROACH))
 	_solid(Vector3(HALF_W * 2.0, 7.0, 0.6), Vector3(0, 2.0, -LANE_LEN - 3.3), Look.toy(Color("07040f"), 1.0, false))
 	_solid(Vector3(HALF_W * 2.0, 1.0, 3.0), Vector3(0, PIT_Y - 0.5, -LANE_LEN - 1.5), Look.toy(Color("120a22"), 1.0, false), 0.6, "pit")
 	_solid(Vector3(HALF_W * 2.0, 0.3, 0.3), Vector3(0, -0.15, -LANE_LEN - 0.15), wall)  # pit lip under the pin deck edge

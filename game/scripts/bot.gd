@@ -34,11 +34,24 @@ static func think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 		inp.grab = true
 		return _fight(b, m, inp, dt, 1.4)
 
+	# Going for a downed player: humans take a beat to notice, don't all go for it, and fumble the grab.
 	var ball := _nearest(b, func(o: Beast): return o.state == Beast.BALL and o.held_by == null, 14.0)
-	if ball:
+	var ball_id := ball.get_instance_id() if ball else 0
+	m.reroll = m.get("reroll", 0.0) - dt
+	if ball_id != m.get("ball_id", 0) or (m.reroll <= 0.0 and not m.get("wants", false)):
+		m.ball_id = ball_id
+		var mine := ball != null and ball.ko_by == b.pid  # you knocked them out, you bowl them
+		m.notice = randf_range(0.4, 0.9) if mine else randf_range(0.8, 1.7)
+		m.wants = randf() < (0.85 if mine else 0.3)
+		m.reroll = randf_range(2.0, 3.5)
+		m.grab_wait = randf_range(0.3, 0.7)
+	m.notice -= dt
+	if ball and m.wants and m.notice <= 0.0:
 		var to := ball.global_position - pos
-		inp.move = Vector2(to.x, to.z).normalized()
-		inp.grab = to.length() < 1.3 and fmod(m.t, 0.25) < 0.12  # press edges until it sticks
+		inp.move = Vector2(to.x, to.z).normalized() * (0.8 if to.length() > 2.0 else 0.5)
+		if to.length() < 1.5:
+			m.grab_wait -= dt
+			inp.grab = m.grab_wait <= 0.0
 		return inp
 	return _fight(b, m, inp, dt, 1.5)
 
@@ -88,7 +101,7 @@ static func _pick_lane(arena: Arena, pos: Vector3) -> int:
 	var best := 0
 	var best_score := -INF
 	for lane in arena.lanes:
-		var score := arena.standing(lane) * 2.0 - absf(arena.lane_x(lane.i) - pos.x) + randf() * 6.0
+		var score := arena.standing(lane) * 1.5 - absf(arena.lane_x(lane.i) - pos.x) + randf() * 2.0
 		if score > best_score:
 			best = lane.i
 			best_score = score

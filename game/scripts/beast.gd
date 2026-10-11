@@ -6,6 +6,7 @@ extends RigidBody3D
 signal knocked_out(victim: Beast, by: int)
 signal flattened(by: int, victim: Beast)  # a bowled ball ran someone over
 signal fx(clip: String, pos: Vector3, volume_db: float)
+signal hurt(victim: Beast, by: int, dir: Vector3, power: float, label: String)  # drives hit reactions on every peer
 
 enum { STAND, DIVE, BALL, CARRIED }
 
@@ -14,7 +15,8 @@ const BODY_H := 1.5
 const BALL_R := 0.55
 const SPEED := 5.6
 const MAX_HEALTH := 100.0
-const KO_TIME := 7.0
+const KO_TIME := 7.5
+const MIN_KO := 3.0  # mashing can't wake you before this, so there's always a window to bowl you
 const IMMUNE_TIME := 2.0  # Gang Beasts kInvincibleTime
 const PUNCH_TIME := 0.24
 const FULL_CHARGE := 0.9
@@ -42,11 +44,20 @@ var held_by: Beast = null
 var last_toucher := 0
 var projectile_t := 0.0
 var ko_time := 0.0
+var ball_t := 0.0
 var since_hit := 9.0
 var stagger := 0.0
 var dive_t := 0.0
 var landed_t := 0.0
-var cooldown := {punch = 0.0, dive = 0.0, jump = 0.0, pins_sfx = 0.0}
+var cooldown := {punch = 0.0, dive = 0.0, jump = 0.0, grab = 0.0, pins_sfx = 0.0}
+var down_t := 0.0  # knocked down: limp, no control (heavy hits, throws, tackles)
+var last_hit_by := 0  # credit for body slams while you're flying
+var ko_by := 0  # who balled us (bots go for their own knockouts first)
+var combo := 0
+var _combo_target: Beast = null
+var _combo_t := 9.0
+var _atk := {}  # the punch in progress: {t, heavy, power, club, hit}
+var _jab_buffer := 0.0
 var hold_time := 0.0
 var bot_mem := {}
 var _punch_hand := 0
@@ -79,6 +90,28 @@ var _last_pos := Vector3.ZERO
 var _speed := 0.0
 var _flash := 0.0
 var _last_health := MAX_HEALTH
+var _bar: MeshInstance3D
+var _hit_shake := 0.0
+var _lean := 0.0  # jelly whiplash: a damped spring tilting the body away from the last hit
+var _lean_v := 0.0
+var _lean_axis := Vector3.RIGHT
+var _squash := Vector3.ONE
+
+const BAR_SHADER := """
+shader_type spatial;
+render_mode unshaded, depth_test_disabled, cull_disabled, shadows_disabled;
+instance uniform float fill = 1.0;
+void vertex() {
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
+}
+void fragment() {
+	bool edge = UV.x < 0.025 || UV.x > 0.975 || UV.y < 0.18 || UV.y > 0.82;
+	vec3 col = mix(vec3(1.0, 0.2, 0.25), vec3(0.25, 0.9, 0.45), smoothstep(0.2, 0.6, fill));
+	ALBEDO = edge ? vec3(0.03, 0.01, 0.06) : (UV.x < fill ? col : vec3(0.12, 0.06, 0.18));
+	ALPHA = 0.92;
+}
+"""
+static var _bar_mat: ShaderMaterial
 
 
 func setup(id: int, info: Dictionary, a: Arena, simulate: bool) -> void:
@@ -136,17 +169,27 @@ func _pressed(inp: Dictionary, k: String) -> bool:
 
 
 func _sim_stand(inp: Dictionary, dt: float) -> void:
-	if since_hit > 2.0:
-		health = minf(health + 9.0 * dt, MAX_HEALTH)
+	if since_hit > 3.0:
+		health = minf(health + 6.0 * dt, MAX_HEALTH)
 	stagger = maxf(stagger - dt, 0.0)
+	_combo_t += dt
+	if down_t > 0.0:  # flopped over: no balance and no control until we get back up
+		down_t -= dt
+		reaching = false
+		charging = false
+		_atk.clear()
+		release_hold()
+		if down_t <= 0.0:
+			physics_material_override = _mat_stand
+		return
 	var move: Vector2 = inp.get("move", Vector2.ZERO).limit_length(1.0)
 	if move.length() > 0.15:
 		facing = atan2(-move.x, -move.y)
-	var speed := SPEED * (0.5 if charging else 1.0) * (0.75 if holding is Beast else 1.0)
+	var speed := SPEED * (0.5 if charging else 1.0) * (0.9 if holding is Beast else 1.0)
 	var hv := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
 	var traction := (0.22 if _on_oil else 1.0) if _grounded else 0.3
 	apply_central_force(((Vector3(move.x, 0.0, move.y) * speed - hv) * 10.0 * traction).limit_length(60.0) * mass)
-	_balance(0.12 if stagger > 0.0 else 1.0)
+	_balance((0.12 if stagger > 0.0 else 1.0) * (0.55 if health < 25.0 else 1.0))  # nearly out = visibly woozy
 
 	if _pressed(inp, "jump") and _grounded and cooldown.jump <= 0.0:
 		linear_velocity.y = 0.0
@@ -158,8 +201,8 @@ func _sim_stand(inp: Dictionary, dt: float) -> void:
 
 	# Grab: hold to keep hold of whatever is in front of you (Gang Beasts style).
 	reaching = inp.get("grab", false) and holding == null
-	if _pressed(inp, "grab") and holding == null:
-		_try_grab()
+	if inp.get("grab", false) and holding == null and cooldown.grab <= 0.0:
+		_try_grab()  # hold to grab whatever you touch
 	if holding != null:
 		if not inp.get("grab", false) or not is_instance_valid(holding):
 			release_hold()
@@ -180,10 +223,15 @@ func _sim_stand(inp: Dictionary, dt: float) -> void:
 			elif holding is Beast:
 				_throw_held(power)
 			elif charge < 0.2:
-				_punch(false, 0.0)
+				_jab_buffer = 0.18  # fires as soon as the previous punch recovers
 			else:
-				_punch(true, clampf((charge - 0.2) / (FULL_CHARGE - 0.2), 0.0, 1.0))
+				_start_attack(true, clampf((charge - 0.2) / (FULL_CHARGE - 0.2), 0.0, 1.0))
 			charge = 0.0
+	_jab_buffer -= dt
+	if _jab_buffer > 0.0 and cooldown.punch <= 0.0 and _atk.is_empty():
+		_jab_buffer = 0.0
+		_start_attack(false, 0.0)
+	_update_attack(dt)
 
 
 func _balance(strength: float) -> void:
@@ -210,41 +258,90 @@ func _ground_check() -> void:
 
 # ---- attacks
 
-func _punch(heavy: bool, power: float) -> void:
-	if cooldown.punch > 0.0 and not heavy:
-		return
-	var club := holding != null and holding.is_in_group("pins")
-	cooldown.punch = 0.45 if heavy else 0.22
+func _start_attack(heavy: bool, power: float) -> void:
+	cooldown.punch = 0.42 if heavy else 0.2
 	punch_t[_punch_hand] = PUNCH_TIME
 	_punch_hand = 1 - _punch_hand
-	var target := _nearest(3.5, 0.45)  # aim assist, like Gang Beasts' TargetingHandeler
+	var gap := 0.0
+	var target := _nearest(2.8, 0.35)  # aim assist, like Gang Beasts' TargetingHandeler
 	if target:
-		var to := target.global_position - global_position
+		var to := (target.global_position - global_position) * Vector3(1, 0, 1)
 		facing = atan2(-to.x, -to.z)
-	var f := _forward()
-	var reach := 1.0 + (0.5 if club else 0.0) + (0.2 if heavy else 0.0)
-	var dmg := lerpf(18.0, 42.0, power) if heavy else 11.0
-	var force := lerpf(6.0, 15.0, power) if heavy else 3.5
-	if club:
-		dmg *= 1.5
-		force *= 1.4
-	var hit := false
-	for body in _overlap(global_position + Vector3.UP * 0.25 + f * reach * 0.7, 0.65 if heavy else 0.55):
-		if body == holding:
-			continue
-		var dir: Vector3 = (body.global_position - global_position) * Vector3(1, 0, 1)
-		dir = (dir.normalized() if dir.length() > 0.1 else f)
-		if body is Beast:
-			body.take_hit(pid, dir, dmg, force, heavy)
-			hit = true
-		elif body is RigidBody3D and not body.freeze:
-			body.apply_central_impulse((dir + Vector3.UP * 0.3) * force * 0.25)
-			hit = true
-	apply_central_impulse(f * (1.6 if heavy else 0.6) * mass)  # punches carry you forward a bit
-	fx.emit(("smack" if heavy else "punch") if hit else "whiff", global_position + Vector3.UP * 0.3 + f * reach * 0.8, 0.0 if hit else -8.0)
+		gap = clampf(to.length() - 1.1, 0.0, 1.6)
+	# Step into the punch so it connects at full extension.
+	apply_central_impulse(_forward() * ((2.2 if heavy else 1.0) + gap * 2.2) * mass)
+	_atk = {t = 0.0, heavy = heavy, power = power, club = holding != null and holding.is_in_group("pins"), hit = []}
 
 
-func take_hit(by: int, dir: Vector3, dmg: float, force: float, heavy := false) -> void:
+func _update_attack(dt: float) -> void:
+	if _atk.is_empty():
+		return
+	_atk.t += dt
+	var t0 := 0.06 if _atk.heavy else 0.04  # wind-up, then the fist travels out (Gang Beasts' readying -> punching)
+	var t1 := 0.2 if _atk.heavy else 0.15
+	if _atk.t >= t0 and _atk.t <= t1:
+		var f := _forward()
+		var reach := 0.9 + (0.5 if _atk.club else 0.0) + (0.2 if _atk.heavy else 0.0)
+		var ext := clampf((_atk.t - t0) / (t1 - t0), 0.0, 1.0)
+		var center := global_position + Vector3.UP * 0.3 + f * (0.45 + reach * ext * 0.8)
+		for body in _overlap(center, 0.62 if _atk.heavy else 0.5):
+			if body == holding or _atk.hit.has(body):
+				continue
+			if not _atk.heavy and _atk.hit.any(func(x): return x is Beast) and body is Beast:
+				continue  # a jab only connects with one person
+			_atk.hit.append(body)
+			_land(body, f)
+	if _atk.t > t1:
+		if _atk.hit.is_empty():
+			fx.emit("whiff", global_position + _forward(), -8.0)
+		_atk.clear()
+
+
+func _land(body: Node3D, f: Vector3) -> void:
+	var dir: Vector3 = (body.global_position - global_position) * Vector3(1, 0, 1)
+	dir = dir.normalized() if dir.length() > 0.1 else f
+	var at := (global_position + body.global_position) * 0.5 + Vector3.UP * 0.3
+	if not body is Beast:
+		if body is RigidBody3D and not body.freeze:  # pins and such
+			body.apply_central_impulse((dir + Vector3.UP * 0.3) * (5.0 if _atk.heavy else 1.5))
+			fx.emit("punch", at, -4.0)
+		return
+	var b: Beast = body
+	var dmg := 12.0
+	var force := 4.0
+	var lift := 0.15
+	var down := 0.0
+	var label := ""
+	if _atk.heavy:
+		var p: float = _atk.power
+		dmg = lerpf(20.0, 42.0, p)
+		force = lerpf(7.0, 16.0, p)
+		lift = lerpf(0.3, 0.6, p)
+		down = lerpf(0.3, 1.3, p)
+		if p >= 0.99:  # a full charge hits extra hard: two SMASHes and you are a ball
+			dmg *= 1.2
+			label = "SMASH!"
+	else:
+		combo = combo + 1 if b == _combo_target and _combo_t < 0.9 else 1
+		_combo_target = b
+		_combo_t = 0.0
+		if combo >= 3:  # jab, jab, FINISHER
+			dmg = 22.0
+			force = 10.0
+			lift = 0.45
+			down = 0.8
+			label = "COMBO!"
+			combo = 0
+		elif combo == 2:
+			label = "x2"
+	if _atk.club:
+		dmg *= 1.4
+		force *= 1.3
+	b.take_hit(pid, dir, dmg, force, lift, down, label)
+	fx.emit("smack" if down > 0.0 else "punch", at, 0.0)
+
+
+func take_hit(by: int, dir: Vector3, dmg: float, force: float, lift := 0.25, down := 0.0, label := "") -> void:
 	if state == CARRIED:
 		return
 	if state == BALL:  # punting a ball sends it rolling, and you get credit for the pins
@@ -258,13 +355,19 @@ func take_hit(by: int, dir: Vector3, dmg: float, force: float, heavy := false) -
 		return
 	health -= dmg
 	since_hit = 0.0
-	apply_central_impulse((dir + Vector3.UP * 0.25).normalized() * force * mass)
-	apply_torque_impulse(Vector3.UP.cross(dir) * force * 0.05)
-	if heavy or dmg >= 25.0:
-		stagger = 0.6
-	if holding != null:  # getting hit makes you drop whatever you were about to bowl
+	last_hit_by = by
+	# Replace most of the current motion so every hit reads clearly, then add a whiplash spin.
+	linear_velocity = linear_velocity * 0.3 + (dir + Vector3.UP * lift).normalized() * force
+	apply_torque_impulse(Vector3.UP.cross(dir) * force * 0.06)
+	stagger = maxf(stagger, 0.25)
+	if down > 0.0:
+		down_t = maxf(down_t, down)
+		physics_material_override = _mat_dive  # tumble and skid to a stop instead of sliding forever
+	if holding != null and (down > 0.0 or dmg >= 20.0):  # a real hit (not a jab) makes you drop the ball
 		release_hold()
 	charging = false
+	_atk.clear()  # and interrupts your own punch
+	hurt.emit(self, by, dir, clampf(dmg / 40.0, 0.2, 1.0), label)
 	if health <= 0.0:
 		go_ball(by)
 
@@ -300,12 +403,17 @@ func _on_body_entered(other: Node) -> void:
 		if state == DIVE and dive_t < 1.0 and not _dive_hits.has(other) and rel > 3.0:
 			_dive_hits.append(other)
 			var k := clampf((rel - 3.0) / 6.0, 0.0, 1.0)
-			other.take_hit(pid, linear_velocity.normalized(), lerpf(15.0, 35.0, k), lerpf(4.0, 10.0, k), k > 0.5)
+			var d := (linear_velocity * Vector3(1, 0, 1)).normalized()
+			other.take_hit(pid, d, lerpf(15.0, 35.0, k), lerpf(5.0, 11.0, k), 0.5, lerpf(0.4, 1.0, k), "TACKLE!" if k > 0.5 else "")
 			fx.emit("smack", (global_position + other.global_position) * 0.5, 0.0)
 		elif state == BALL and projectile_t > 0.0 and rel > 3.5 and other.immune <= 0.0:
 			# Super Battle Golf's swing projectile: a launched ball flattens anyone in its path.
-			other.take_hit(last_toucher, linear_velocity.normalized(), 45.0, 9.0, true)
+			other.take_hit(last_toucher, (linear_velocity * Vector3(1, 0, 1)).normalized(), 45.0, 11.0, 0.6, 1.2, "BOWLED!")
 			flattened.emit(last_toucher, other)
+		elif state == STAND and down_t > 0.0 and rel > 5.5 and other.immune <= 0.0 and other.down_t <= 0.0:
+			# A launched body crashes through whoever it lands on.
+			other.take_hit(last_hit_by, (linear_velocity * Vector3(1, 0, 1)).normalized(), 10.0, 5.0, 0.3, 0.5)
+			fx.emit("smack", (global_position + other.global_position) * 0.5, -2.0)
 	elif other is Beast and state == BALL and projectile_t > 0.0 and other.state == BALL:
 		other.last_toucher = last_toucher  # chain reaction: credit flows to the original bowler
 		other.projectile_t = 2.0
@@ -360,6 +468,7 @@ func _update_hold(dt: float) -> void:
 		b.apply_central_force(((pt - b.global_position) * 40.0 - (b.linear_velocity - linear_velocity) * 5.0) * b.mass)
 		if hold_time > 2.5 or b.state == DIVE or b.global_position.distance_to(pt) > 2.0:
 			release_hold()
+			cooldown.grab = 1.0
 		return
 	if holding is Beast:
 		holding.global_position = global_position + Vector3.UP * 0.45 + f * 0.95
@@ -374,6 +483,7 @@ func release_hold(throw_v := Vector3.ZERO) -> void:
 		return
 	var h := holding
 	holding = null
+	cooldown.grab = maxf(cooldown.grab, 0.5)  # don't instantly re-grab what you just bowled or threw
 	if not is_instance_valid(h):
 		return
 	remove_collision_exception_with(h)
@@ -406,9 +516,9 @@ func _bowl(power: float) -> void:
 
 func _throw_held(power: float) -> void:
 	var b: Beast = holding
-	release_hold(_forward() * lerpf(6.0, 12.0, power) + Vector3.UP * lerpf(3.0, 6.0, power))
-	b.stagger = 1.0
-	b.take_hit(pid, _forward(), 8.0, 0.0)
+	release_hold()
+	cooldown.grab = 0.6
+	b.take_hit(pid, _forward(), 8.0, lerpf(7.0, 13.0, power), lerpf(0.4, 0.6, power), 1.0, "YEET!" if power > 0.7 else "")
 	fx.emit("whiff", global_position, 0.0)
 
 
@@ -418,6 +528,8 @@ func go_ball(by: int) -> void:
 	state = BALL
 	health = 0.0
 	ko_time = KO_TIME
+	ball_t = 0.0
+	ko_by = by
 	charging = false
 	stagger = 0.0
 	last_toucher = 0
@@ -434,8 +546,11 @@ func go_ball(by: int) -> void:
 func _sim_ball(inp: Dictionary, dt: float) -> void:
 	for k in ["punch", "jump", "grab", "dive"]:
 		if _pressed(inp, k):
-			ko_time -= 0.3  # mash to wake up sooner (Gang Beasts ReviveCheck)
+			ko_time -= 0.12  # mash to wake up sooner (Gang Beasts ReviveCheck)
 	ko_time -= dt
+	ball_t += dt
+	if ball_t < MIN_KO:
+		return
 	if state == CARRIED:
 		if ko_time <= 0.0 and held_by != null:  # woke up in someone's arms: wriggle free
 			var carrier := held_by
@@ -449,6 +564,7 @@ func _sim_ball(inp: Dictionary, dt: float) -> void:
 
 func _wake() -> void:
 	state = STAND
+	down_t = 0.0
 	health = 70.0
 	immune = IMMUNE_TIME
 	last_toucher = 0
@@ -551,8 +667,15 @@ func _build_visuals() -> void:
 	_label.outline_size = 12
 	_label.pixel_size = 0.005
 	_label.modulate = color.lightened(0.3)
-	_label.position.y = 1.35
+	_label.position.y = 1.45
 	_overlay.add_child(_label)
+	if _bar_mat == null:
+		_bar_mat = ShaderMaterial.new()
+		_bar_mat.shader = Shader.new()
+		_bar_mat.shader.code = BAR_SHADER
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.8, 0.12)
+	_bar = Look.mesh(_overlay, quad, _bar_mat, Vector3(0, 1.27, 0))
 	var star_mesh := PrismMesh.new()
 	star_mesh.size = Vector3(0.18, 0.18, 0.05)
 	for i in 3:
@@ -590,8 +713,12 @@ func _process(dt: float) -> void:
 	_flash = maxf(_flash - dt, 0.0)
 	_body_mat.emission_energy_multiplier = 3.0 if _flash > 0.0 else 0.0
 
-	var squash := Vector3(1.25, 0.72, 1.25) if balled else Vector3.ONE
-	_body.scale = _body.scale.lerp(squash, k)
+	_squash = _squash.lerp(Vector3(1.25, 0.72, 1.25) if balled else Vector3.ONE, k)
+	_lean_v += (-180.0 * _lean - 9.0 * _lean_v) * dt
+	_lean += _lean_v * dt
+	_body.basis = Basis(_lean_axis, clampf(_lean, -0.9, 0.9)) * Basis.from_scale(_squash)
+	_hit_shake = maxf(_hit_shake - dt, 0.0)
+	_vis.position = Vector3(randf() - 0.5, randf() - 0.5, randf() - 0.5) * 0.14 if _hit_shake > 0.0 else Vector3.ZERO
 	for p in _pupils:
 		p.scale = p.scale.lerp(Vector3(1.6, 0.25, 1.0) if balled else Vector3.ONE, k)
 
@@ -612,7 +739,9 @@ func _process(dt: float) -> void:
 			var e := sin(PI * punch_t[h] / PUNCH_TIME)
 			target = target.lerp(Vector3(s * 0.12, 0.3, -1.05), e)
 		_fists[h].position = _fists[h].position.lerp(target, k if punch_t[h] <= 0.0 else 0.6)
-		var grow := 1.0 + (charge / FULL_CHARGE * 0.6 if charging and h == _punch_hand_vis() else 0.0)
+		var grow := 1.0
+		if charging and h == _punch_hand_vis():
+			grow += charge / FULL_CHARGE * 0.6 + (sin(Time.get_ticks_msec() * 0.03) * 0.12 if charge >= FULL_CHARGE else 0.0)
 		_fists[h].scale = Vector3.ONE * grow
 		var ft := Vector3(s * 0.2, -0.78 + maxf(0.0, cos(_phase + h * PI)) * 0.14 * walk, sin(_phase + h * PI) * 0.32 * walk)
 		if balled:
@@ -621,7 +750,9 @@ func _process(dt: float) -> void:
 
 	# The overlay stays upright even while the body rolls around.
 	_overlay.global_position = global_position
-	_label.position.y = 1.0 if balled else 1.35
+	_label.position.y = 1.0 if balled else 1.45
+	_bar.visible = not balled and health < MAX_HEALTH - 0.5
+	_bar.set_instance_shader_parameter("fill", health / MAX_HEALTH)
 	var t := Time.get_ticks_msec() * 0.001
 	for i in _stars.size():
 		var a := t * 4.0 + TAU * i / _stars.size()
@@ -632,6 +763,20 @@ func _process(dt: float) -> void:
 	_bubble.scale = Vector3.ONE * (1.0 + sin(t * 10.0) * 0.03)
 	_crown.visible = leader and not balled
 	_crown.position.y = 1.0 + sin(t * 3.0) * 0.05
+
+
+func react(dir: Vector3, power: float, attacker := false) -> void:
+	## Visual-only hit reaction, run on every peer: hit-stop shake, plus whiplash and squash for the victim.
+	_hit_shake = 0.05 if attacker else 0.08 + 0.1 * power
+	if attacker:
+		return
+	var local := global_basis.inverse() * dir
+	local.y = 0.0
+	if local.length() > 0.01:
+		_lean_axis = Vector3.UP.cross(local.normalized())
+		_lean_v += 7.0 + 9.0 * power
+	_squash = Vector3(1.0 + 0.25 * power, 1.0 - 0.25 * power, 1.0 + 0.25 * power)
+	_flash = 0.1
 
 
 func _punch_hand_vis() -> int:

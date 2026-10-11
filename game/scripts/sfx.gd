@@ -18,6 +18,7 @@ func _ready() -> void:
 	_clips.strike = _make(1.2, _arp([523.0, 659.0, 784.0, 1047.0, 1319.0]))
 	_clips.spare = _make(0.8, _arp([392.0, 523.0, 659.0]))
 	_clips.thud = _make(0.2, func(t): return sin(TAU * 50.0 * t) * exp(-t * 20.0))
+	_clips.ding = _make(0.3, func(t): return (sin(TAU * 1760.0 * t) + 0.5 * sin(TAU * 2640.0 * t)) * exp(-t * 12.0) * 0.4)
 	_clips.buzzer = _make(1.0, func(t): return signf(sin(TAU * 110.0 * t)) * 0.25 * (1.0 - t))
 	for i in 24:
 		var p := AudioStreamPlayer3D.new()

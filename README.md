@@ -25,17 +25,26 @@ offer to download the export templates the first time.
 | Action | Keyboard + mouse | Gamepad |
 |---|---|---|
 | Move | WASD / arrows | Left stick |
-| Punch: tap = jab, hold = haymaker | Left mouse / J | RT / X |
-| Grab: hold to keep hold | Right mouse / K | LT / RB |
+| Punch: tap = jab (3 in a row = combo finisher), hold = haymaker | Left mouse / J | RT / X |
+| Grab: hold to grab whatever you touch | Right mouse / K | LT / RB |
 | Bowl: hold Grab on a ball, hold Punch to charge, release | | |
 | Jump | Space | A |
 | Dive tackle | Shift / L | B |
 | Menu | Esc | Start |
 
+### Fighting
+
+- **Jab, jab, COMBO!** Three quick jabs on the same person: the third one launches them and knocks them flat.
+- **Haymaker:** hold punch to wind up (you move slower), release to swing. At full charge the fist pulses and
+  dings, and the swing is a **SMASH**: two SMASHes ball anyone. A quick jab interrupts a wind-up.
+- **Dive tackle** knocks people down. Bodies sent flying crash through whoever they land on.
+- Health bars show over everyone's heads. Below a quarter health you're visibly woozy.
+- Carrying a ball? Jabs only stagger you. A real hit (haymaker, finisher, tackle, flying body) makes you drop it.
+
 ### Rules
 
-- When your health hits zero you curl into a ball for about 7 s. **Mash buttons** to wake up sooner, or to
-  wriggle free while someone is carrying you.
+- When your health hits zero you curl into a ball for about 7 s (at least 3). **Mash buttons** to wake up
+  sooner, or to wriggle free while someone is carrying you.
 - Pins knocked down = points. **Strike** gives +10 bonus and **Spare** +5. A bowled body that runs someone
   over gives +2. If you're 30+ points behind, your rolls are worth ×1.5.
 - Leftover pins stay up for 12 s, so you can go for the spare. Then the pinsetter re-racks the lane.

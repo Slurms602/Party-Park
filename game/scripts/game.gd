@@ -27,6 +27,7 @@ var _clock := 0.0
 var _shake := 0.0
 var _follow: Beast = null
 var _follow_t := 0.0
+var _dinged := false
 var _ready_peers := {}  # host: clients whose Game node exists, so RPCs to it can land
 
 
@@ -63,6 +64,7 @@ func _sync_roster() -> void:
 				b.knocked_out.connect(_on_ko)
 				b.flattened.connect(_on_flattened)
 				b.fx.connect(func(clip, pos, vol): _send(_ev_fx, [clip, pos, vol]))
+				b.hurt.connect(func(v, by, dir, power, label): _send(_ev_hit, [v.pid, by, dir, power, label]))
 		if not scores.has(pid):
 			scores[pid] = {total = 0, rolls = [], streak = 0}
 	for pid in beasts.keys():
@@ -272,6 +274,43 @@ func _burst(pos: Vector3, col: Color, amount: int, speed: float) -> void:
 	p.finished.connect(p.queue_free)
 
 
+@rpc("authority", "call_local", "unreliable")
+func _ev_hit(victim: int, by: int, dir: Vector3, power: float, label: String) -> void:
+	var v: Beast = beasts.get(victim)
+	var a: Beast = beasts.get(by)
+	if v:
+		v.react(dir, power)
+	if a:
+		a.react(dir, power, true)
+	if v and label != "":
+		_popup(v.global_position + Vector3.UP * 1.8, label, a.color.lightened(0.3) if a else Color.WHITE)
+	if victim == Net.my_id() or by == Net.my_id():  # hits you're part of shake harder
+		_shake = maxf(_shake, 0.1 + 0.2 * power)
+		if power > 0.6:
+			hud.impact()
+
+
+func _popup(pos: Vector3, text: String, col: Color) -> void:
+	var l := Label3D.new()
+	l.text = text
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.font_size = 80
+	l.outline_size = 20
+	l.pixel_size = 0.006
+	l.modulate = col
+	l.outline_modulate = Color(0.06, 0.02, 0.12)
+	add_child(l)
+	l.global_position = pos
+	l.scale = Vector3.ONE * 0.4
+	var tw := l.create_tween().set_parallel()
+	tw.tween_property(l, "global_position", pos + Vector3.UP * 0.9, 0.7).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(l, "scale", Vector3.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(l, "modulate:a", 0.0, 0.3).set_delay(0.45)
+	tw.tween_property(l, "outline_modulate:a", 0.0, 0.3).set_delay(0.45)
+	tw.chain().tween_callback(l.queue_free)
+
+
 @rpc("authority", "call_local", "reliable")
 func _ev_feed(text: String, col: Color) -> void:
 	hud.feed(text, col)
@@ -319,6 +358,10 @@ func _process(dt: float) -> void:
 		_interpolate(dt)
 	var me: Beast = beasts.get(Net.my_id())
 	if me:
+		var full := me.charging and me.charge >= Beast.FULL_CHARGE - 0.01
+		if full and not _dinged:
+			Sfx.play_ui("ding", -4.0)  # fully charged
+		_dinged = full
 		hud.set_me(me.health, me.charge / Beast.FULL_CHARGE if me.charging else -1.0, me.state >= Beast.BALL, me.net_holding or me.holding != null)
 	hud.set_time(time_left)
 	arena.screen_board.time_left = time_left
