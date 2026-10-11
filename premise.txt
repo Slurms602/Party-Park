@@ -1,0 +1,3 @@
+Bowling your Friends
+
+A multiplayer game with fun party physics, the goal is to beat the shit out of your friends until they curl up into a ball, at which point you can bowl them down the lane and rack up points. Maybe there is multiple lanes and they rerack over time. There is no turns, it is just fighting chaos and then bowling your friends down the lane. There should be a live scoreboard just like they have at real bowling alleys. It should be quite chaotic, like even if a player beats their friend into submission and is about to bowl them, another player can still mess them up. There should be a time limit and when it runs out, the player with the most points wins. graphics should be on par with super battle golf but not a copy, something distinct and fun. 

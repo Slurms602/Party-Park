@@ -1,0 +1,10 @@
+# Reference game installs (copyrighted, local research only)
+/Gang Beasts/
+/Super Battle Golf/
+
+# Godot
+.godot/
+*.import
+/builds/
+*.tmp
+*.log
