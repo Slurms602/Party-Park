@@ -1,0 +1,10 @@
+# One-click deploy of the online relay on Render's free plan: render.com -> New -> Blueprint -> this repo.
+services:
+  - type: web
+    name: bowling-your-friends-relay
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm ci
+    startCommand: node relay.js
+    healthCheckPath: /

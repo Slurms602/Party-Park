@@ -1,13 +1,20 @@
 extends Node
 ## Lobby and connection (autoload "Net").
 ## The host owns all physics. Clients only send input and draw the snapshots they receive.
+## Online play goes through the room-code relay (RelayPeer), so nobody has to port forward. Super Battle Golf gets
+## the same thing from Steam's relay. "Host on this network" / direct IP use ENet, and LAN beacons make nearby
+## games show up in the join screen by themselves.
 
 signal players_changed
 signal match_started(seconds: float)
 signal match_ended
 signal status(text: String)
+signal room_ready(code: String)
+signal lan_games_changed
 
 const PORT := 7777
+const BEACON_PORT := 7778
+const DEFAULT_RELAY := "wss://bowling-your-friends-relay.onrender.com"  # see render.yaml; override in Settings
 const MAX_PLAYERS := 8
 const COLORS := [Color("ff4d6d"), Color("4dabff"), Color("ffd23f"), Color("3ddc97"),
 	Color("b980ff"), Color("ff8c42"), Color("ff7eb6"), Color("5ef2f2")]
@@ -17,6 +24,11 @@ var players := {}  # peer id (bots < 0) -> {name, color, bot, skin}
 var in_match := false
 var match_seconds := 180.0
 var _next_bot := -1
+var room_code := ""  # online room code (host and clients)
+var lan_games := {}  # ip -> beacon info {name, n, code, port, seen}
+var _beacon := PacketPeerUDP.new()
+var _beacon_t := 0.0
+var _listen: PacketPeerUDP
 
 
 func _ready() -> void:
@@ -25,9 +37,60 @@ func _ready() -> void:
 	multiplayer.connected_to_server.connect(func(): _register.rpc_id(1, Prefs.player_name, Prefs.skin))
 	multiplayer.connection_failed.connect(func(): leave(); status.emit("Could not connect."))
 	multiplayer.server_disconnected.connect(func(): leave(); status.emit("The host left."))
+	_wake_relay.call_deferred()
 
 
-func host() -> String:
+func relay_url() -> String:
+	return Prefs.relay.strip_edges() if Prefs.relay.strip_edges() != "" else DEFAULT_RELAY
+
+
+func host_online() -> void:
+	## Opens a room on the relay. room_ready(code) fires when it's up; status(msg) fires if it fails.
+	leave()
+	var peer := RelayPeer.new()
+	peer.hosted.connect(func(c):
+		room_code = c
+		players = {1: _entry(Prefs.player_name, false, Prefs.skin)}
+		print("ROOM CODE ", c)
+		players_changed.emit()
+		room_ready.emit(c))
+	peer.failed.connect(_on_relay_failed, CONNECT_DEFERRED)
+	var err := peer.host(relay_url())
+	if err != OK:
+		status.emit("Couldn't start online hosting (%s)." % error_string(err))
+		return
+	multiplayer.multiplayer_peer = peer
+
+
+func join_code(code: String) -> void:
+	leave()
+	var peer := RelayPeer.new()
+	peer.failed.connect(_on_relay_failed, CONNECT_DEFERRED)
+	var err := peer.join(relay_url(), code)
+	if err != OK:
+		status.emit("Couldn't connect (%s)." % error_string(err))
+		return
+	room_code = peer.code
+	multiplayer.multiplayer_peer = peer
+
+
+func _on_relay_failed(message: String) -> void:
+	leave()
+	status.emit(message)
+
+
+func _wake_relay() -> void:
+	# Free hosting plans put the relay to sleep when idle; poke it as soon as the game opens so it's awake by the
+	# time someone presses HOST.
+	var http := HTTPRequest.new()
+	http.timeout = 90.0
+	add_child(http)
+	http.request_completed.connect(func(_r, _c, _h, _b): http.queue_free())
+	if http.request(relay_url().replace("wss://", "https://").replace("ws://", "http://")) != OK:
+		http.queue_free()
+
+
+func host_lan() -> String:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(PORT, MAX_PLAYERS)
 	if err != OK:
@@ -38,7 +101,7 @@ func host() -> String:
 	return ""
 
 
-func join(ip: String) -> String:
+func join_ip(ip: String) -> String:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(ip.strip_edges(), PORT)
 	if err != OK:
@@ -52,15 +115,61 @@ func leave() -> void:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
 	players.clear()
+	room_code = ""
 	if in_match:
 		in_match = false
 		match_ended.emit()
 	players_changed.emit()
 
 
+# ---------------------------------------------------------------- LAN discovery
+
+func start_discovery() -> void:
+	if _listen == null:
+		_listen = PacketPeerUDP.new()
+		if _listen.bind(BEACON_PORT) != OK:  # another copy of the game on this PC already listens
+			_listen = null
+
+
+func stop_discovery() -> void:
+	if _listen:
+		_listen.close()
+		_listen = null
+	lan_games.clear()
+
+
+func _process(dt: float) -> void:
+	if is_host():  # tell the local network about this game once a second
+		_beacon_t -= dt
+		if _beacon_t <= 0.0:
+			_beacon_t = 1.0
+			var info := {g = "byf", v = RelayPeer.PROTOCOL, name = players[1].name if players.has(1) else "?",
+				n = players.size(), code = room_code, port = PORT}
+			_beacon.set_broadcast_enabled(true)
+			_beacon.set_dest_address("255.255.255.255", BEACON_PORT)
+			_beacon.put_packet(JSON.stringify(info).to_utf8_buffer())
+	if _listen == null:
+		return
+	var changed := false
+	while _listen.get_available_packet_count() > 0:
+		var data = JSON.parse_string(_listen.get_packet().get_string_from_utf8())
+		var ip := _listen.get_packet_ip()
+		if data is Dictionary and data.get("g") == "byf" and data.get("v") == RelayPeer.PROTOCOL:
+			changed = changed or not lan_games.has(ip) or lan_games[ip].n != data.n
+			data.seen = Time.get_ticks_msec()
+			lan_games[ip] = data
+	for ip in lan_games.keys():
+		if Time.get_ticks_msec() - lan_games[ip].seen > 3500:
+			lan_games.erase(ip)
+			changed = true
+	if changed:
+		lan_games_changed.emit()
+
+
 func is_online() -> bool:
-	return multiplayer.multiplayer_peer != null and \
-		multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+	var p := multiplayer.multiplayer_peer
+	# Godot's default OfflineMultiplayerPeer reports itself as connected, so rule it out explicitly.
+	return p != null and not p is OfflineMultiplayerPeer and p.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
 
 
 func is_host() -> bool:

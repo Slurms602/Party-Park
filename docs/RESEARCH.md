@@ -47,6 +47,7 @@ names: no tuning assets (`data.unity3d`, Unity scenes) were decoded, so all our 
 | `SwingPowerBarUi{overchargeFill, overchargedPopScaleAddition, shakeTween}` | A power bar floats over your bowler while you wind up. It wobbles and shows MAX! at full charge. |
 | `ButtonPrompt`, `WorldspaceIconUi{offscreenArrow, distanceLabel}` | Context key prompts (GRAB THEM, WIND UP / BOWL!, GET BEHIND THE FOUL LINE) and a bouncing GRAB! marker over downed players. |
 | `ScoreboardEntry{ranking, knockouts, knockoutMedal, wins, hostIcon}` | Ranked scoreboard rows with a crown for the leader. Results show points, strikes, spares and KOs. |
+| `TransportType`: Kcp, Steam. `LobbyMode`: Public, Friends, InviteOnly. `BNetworkManager.ConnectToSteamFriend`, `OnSteamGameLobbyJoinRequested`, `LobbyBrowser` | Hosting is painless because of Steam's relay and lobbies. Until we're on Steam, our own relay gives the same "host, share a code, friends join" flow without port forwarding. |
 | `MainMenu{background, panAmount}`, `MainMenuScenario` | The menu sits over a live alley where bots brawl and bowl. |
 | `PlayerCosmetics` / `Loadout`: Head, Hat, Face, FaceLower, Body, Shoes, Eyes, Mouth, Brows, Cheeks, SkinColor, VictoryDance...; `CustomizationMenuPreview` | Skins are a loadout of slots (hat, eyes, mouth, outfit, gloves, shoes, accent) shown on a turntable preview. The winner dances on the results screen. |
 

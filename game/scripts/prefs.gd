@@ -8,6 +8,7 @@ var skin := {}
 var music := 0.7
 var sfx := 0.9
 var fullscreen := false
+var relay := ""  # custom online server URL; empty = Net.DEFAULT_RELAY
 
 
 func _ready() -> void:
@@ -22,6 +23,7 @@ func _ready() -> void:
 	music = cfg.get_value("audio", "music", music)
 	sfx = cfg.get_value("audio", "sfx", sfx)
 	fullscreen = cfg.get_value("video", "fullscreen", fullscreen)
+	relay = cfg.get_value("online", "relay", relay)
 	apply()
 
 
@@ -39,4 +41,5 @@ func save() -> void:
 	cfg.set_value("audio", "music", music)
 	cfg.set_value("audio", "sfx", sfx)
 	cfg.set_value("video", "fullscreen", fullscreen)
+	cfg.set_value("online", "relay", relay)
 	cfg.save(PATH)

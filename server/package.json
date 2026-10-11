@@ -1,0 +1,10 @@
+{
+  "name": "bowling-your-friends-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Room-code relay so friends can play Bowling your Friends without port forwarding",
+  "main": "relay.js",
+  "scripts": { "start": "node relay.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}

@@ -22,6 +22,15 @@ var _slot_labels := {}
 var _preset := 0
 var _args := {}
 var _logo_node: Control
+var _code: LineEdit
+var _lan_list: VBoxContainer
+var _lan_empty: Label
+var _room_card: PanelContainer
+var _room_code: Label
+var _conn_msg: Label
+var _conn_t := 0.0
+var _lan_host: Button
+var _back_to := "main"
 
 
 func _ready() -> void:
@@ -38,7 +47,10 @@ func _ready() -> void:
 	Net.match_ended.connect(_on_match_ended)
 	Net.status.connect(func(t):
 		_status.text = t
-		_show("main"))
+		_lan_host.visible = _back_to == "main"  # online hosting failed: offer the local-network fallback
+		_show(_back_to))
+	Net.room_ready.connect(func(_c): _show("lobby"))
+	Net.lan_games_changed.connect(_refresh_lan)
 	Music.play("menu", 0.0)
 	_show(_args.get("screen", "main"))
 	_run_args()
@@ -108,32 +120,91 @@ func _build_ui() -> void:
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 	var main := _screen(stack, "main")
-	UI.button(main, "HOST GAME", func():
-		_status.text = Net.host()
-		if Net.is_host():
-			_show("lobby"))
+	UI.button(main, "HOST GAME", _host_online)
 	UI.button(main, "JOIN GAME", func(): _show("join"))
 	UI.button(main, "CUSTOMIZE", func(): _show("customize"))
 	UI.button(main, "SETTINGS", func(): _show("settings"))
 	UI.button(main, "QUIT", func(): get_tree().quit())
+	_lan_host = UI.button(main, "HOST ON THIS WI-FI ONLY", func():
+		_status.text = Net.host_lan()
+		if Net.is_host():
+			_show("lobby"))
+	_lan_host.add_theme_font_size_override("font_size", 20)
+	_lan_host.visible = false
 
-	var join := _screen(stack, "join", "JOIN A FRIEND")
-	UI.label(join, "Host's IP address", 22, UI.CYAN)
+	var join := _screen(stack, "join", "JOIN A GAME")
+	UI.label(join, "TYPE YOUR FRIEND'S ROOM CODE", 22, UI.CYAN)
+	var code_row := HBoxContainer.new()
+	code_row.add_theme_constant_override("separation", 12)
+	join.add_child(code_row)
+	_code = LineEdit.new()
+	_code.max_length = 4
+	_code.placeholder_text = "CODE"
+	_code.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_code.custom_minimum_size = Vector2(260, 84)
+	_code.add_theme_font_override("font", Look.title_font())
+	_code.add_theme_font_size_override("font_size", 56)
+	_code.text_changed.connect(func(t):
+		var up: String = t.to_upper().replace(" ", "")
+		if up != t:
+			_code.text = up
+			_code.caret_column = up.length()
+		if up.length() == 4:
+			_join_code())  # no need to press anything once the code is in
+	_code.text_submitted.connect(func(_t): _join_code())
+	code_row.add_child(_code)
+	UI.button(code_row, "JOIN", _join_code, 150).custom_minimum_size.y = 84
+	UI.label(join, "GAMES ON YOUR WI-FI", 22, UI.CYAN)
+	_lan_list = VBoxContainer.new()
+	_lan_list.add_theme_constant_override("separation", 8)
+	join.add_child(_lan_list)
+	_lan_empty = UI.label(join, "Looking for games nearby...", 20, Color(1, 1, 1, 0.6))
+	UI.label(join, "OR CONNECT BY IP", 18, Color(1, 1, 1, 0.6))
+	var iprow := HBoxContainer.new()
+	iprow.add_theme_constant_override("separation", 10)
+	join.add_child(iprow)
 	_ip = LineEdit.new()
-	_ip.text = "127.0.0.1"
-	_ip.custom_minimum_size = Vector2(420, 54)
-	join.add_child(_ip)
-	UI.button(join, "JOIN", func():
-		_status.text = "Connecting..."
-		var err := Net.join(_ip.text)
+	_ip.placeholder_text = "192.168.1.20"
+	_ip.custom_minimum_size = Vector2(300, 50)
+	iprow.add_child(_ip)
+	UI.button(iprow, "CONNECT", func():
+		_back_to = "join"
+		_connecting("Connecting to %s..." % _ip.text)
+		var err := Net.join_ip(_ip.text)
 		if err != "":
-			_status.text = err)
+			_status.text = err
+			_show("join"), 160)
 	UI.button(join, "BACK", func(): _show("main"))
+
+	var conn := _screen(stack, "connecting", "CONNECTING")
+	_conn_msg = UI.label(conn, "", 24, Color.WHITE)
+	_conn_msg.custom_minimum_size.x = 460
+	_conn_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	UI.button(conn, "CANCEL", func():
+		Net.leave()
+		_show(_back_to))
 
 	_build_customize(stack)
 	_build_settings(stack)
 
 	var lobby := _screen(stack, "lobby", "LOBBY")
+	_room_card = PanelContainer.new()
+	_room_card.add_theme_stylebox_override("panel", UI.box(Color(0.1, 0.05, 0.25, 0.95), UI.YELLOW, 4, 16))
+	lobby.add_child(_room_card)
+	var rc := HBoxContainer.new()
+	rc.add_theme_constant_override("separation", 18)
+	_room_card.add_child(rc)
+	var rcv := VBoxContainer.new()
+	rcv.add_theme_constant_override("separation", -6)
+	rc.add_child(rcv)
+	UI.label(rcv, "ROOM CODE", 20, UI.CYAN, true)
+	_room_code = UI.label(rcv, "", 64, UI.YELLOW, true)
+	var copy := UI.button(rc, "COPY", func(): pass, 130)
+	copy.pressed.connect(func():
+		DisplayServer.clipboard_set(Net.room_code)
+		copy.text = "COPIED!"
+		get_tree().create_timer(1.5).timeout.connect(func(): copy.text = "COPY"))
+	copy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_cards = GridContainer.new()
 	_cards.columns = 2
 	_cards.add_theme_constant_override("h_separation", 12)
@@ -208,6 +279,14 @@ func _show(id: String) -> void:
 	if _screens.has(id):
 		UI.pop_in.call_deferred(_screens[id])
 	_preview_holder.visible = id == "customize"
+	if id == "join":
+		Net.start_discovery()
+		_refresh_lan()
+		var clip := DisplayServer.clipboard_get().strip_edges().to_upper()
+		if clip.length() == 4 and clip.is_valid_identifier() and _code.text == "":
+			_code.text = clip  # a friend pasted the code in chat and you copied it
+	elif id != "connecting":
+		Net.stop_discovery()
 	_logo_node.visible = id in ["main", "join"]  # sub-screens need the room
 	if id == "lobby":
 		_refresh_lobby()
@@ -349,6 +428,14 @@ func _build_settings(stack: Control) -> void:
 			Prefs.apply())
 		s.drag_ended.connect(func(_c): Sfx.play_ui("ui_click", -4.0))
 		v.add_child(s)
+	UI.label(v, "ONLINE SERVER (leave empty for the default)", 18, UI.CYAN)
+	var relay := LineEdit.new()
+	relay.text = Prefs.relay
+	relay.placeholder_text = Net.DEFAULT_RELAY
+	relay.custom_minimum_size = Vector2(460, 44)
+	relay.add_theme_font_size_override("font_size", 16)
+	relay.text_changed.connect(func(t): Prefs.relay = t.strip_edges())
+	v.add_child(relay)
 	var fs := CheckButton.new()
 	fs.text = "FULLSCREEN"
 	fs.button_pressed = Prefs.fullscreen
@@ -390,13 +477,60 @@ func _refresh_lobby() -> void:
 		_cards.add_child(card)
 	for c in _host_only:
 		c.visible = Net.is_host()
-	if Net.is_host():
+	_room_card.visible = Net.room_code != ""
+	_room_code.text = Net.room_code
+	if Net.room_code != "":
+		_status.text = "Friends press JOIN GAME and type %s. Anyone on your Wi-Fi will also see your game listed there." % Net.room_code \
+			if Net.is_host() else "Waiting for the host to start..."
+	elif Net.is_host():
 		var ips := Array(IP.get_local_addresses()).filter(func(a): return a.count(".") == 3 and not a.begins_with("127."))
-		_status.text = "Friends join with your IP: %s (port %d)\nOver the internet: forward UDP %d, or use a LAN VPN like Tailscale." \
-			% [", ".join(ips.slice(0, 3)), Net.PORT, Net.PORT]
+		_status.text = "Hosting on this network only. Friends on your Wi-Fi will see your game in JOIN GAME (or connect to %s)." \
+			% ", ".join(ips.slice(0, 2))
 	elif Net.is_online():
 		_status.text = "Waiting for the host to start..."
 	_preview.build(_my_color(), Prefs.skin)
+
+
+func _host_online() -> void:
+	_back_to = "main"
+	_lan_host.visible = false
+	_connecting("Creating your room...")
+	Net.host_online()
+
+
+func _join_code() -> void:
+	var code := _code.text.strip_edges().to_upper()
+	if code.length() != 4:
+		_status.text = "Room codes are 4 letters."
+		return
+	_back_to = "join"
+	_connecting("Joining %s..." % code)
+	Net.join_code(code)
+
+
+func _connecting(msg: String) -> void:
+	_status.text = ""
+	_conn_msg.text = msg
+	_conn_t = 0.0
+	_show("connecting")
+
+
+func _refresh_lan() -> void:
+	for c in _lan_list.get_children():
+		c.queue_free()
+	for ip in Net.lan_games:
+		var g: Dictionary = Net.lan_games[ip]
+		var code: String = g.get("code", "")
+		var b := UI.button(_lan_list, "%s'S GAME  ·  %d PLAYER%s" % [str(g.name).to_upper(), g.n, "" if g.n == 1 else "S"], func():
+			if code != "":
+				_code.text = code
+				_join_code()
+			else:
+				_back_to = "join"
+				_connecting("Connecting to %s..." % ip)
+				Net.join_ip(ip), 460)
+		b.add_theme_font_size_override("font_size", 22)
+	_lan_empty.visible = Net.lan_games.is_empty()
 
 
 # ================================================================= attract scene: bots playing behind the menu
@@ -436,6 +570,10 @@ func _physics_process(dt: float) -> void:
 
 
 func _process(dt: float) -> void:
+	if _screens.connecting.visible:
+		_conn_t += dt
+		if _conn_t > 4.0 and not Net.is_online():
+			_conn_msg.text = "Waking up the online server...\nThe first game of the day can take up to a minute."
 	if _preview_holder.visible:
 		_preview.rotation.y = PI + sin(Time.get_ticks_msec() * 0.0007) * 0.6  # face the camera, sway a little
 		_preview.pose(dt, {dance = true})
@@ -478,15 +616,28 @@ func _run_args() -> void:
 		Engine.time_scale = float(_args.timescale)
 		Engine.physics_ticks_per_second = int(60 * Engine.time_scale)
 		Engine.max_physics_steps_per_frame = 64
-	if _args.has("host"):
-		_status.text = Net.host()
-		_show("lobby")
+	if _args.has("relay"):
+		Prefs.relay = _args.relay
+	var setup := func():
 		for i in int(_args.get("bots", "0")):
 			Net.add_bot()
 		if _args.has("autostart"):
 			Net.start_match(float(_args.get("seconds", "180")))
+	if _args.has("host"):  # local network (ENet)
+		_status.text = Net.host_lan()
+		_show("lobby")
+		setup.call()
+	elif _args.has("host-online"):
+		Net.room_ready.connect(func(_c): setup.call(), CONNECT_ONE_SHOT)
+		_host_online()
 	elif _args.has("join"):
-		Net.join(_args.join)
+		Net.join_ip(_args.join)
+	elif _args.has("join-code"):
+		_code.text = _args["join-code"]
+		_join_code()
+	if _args.has("discover"):
+		_show("join")
+		get_tree().create_timer(3.0).timeout.connect(func(): print("LAN GAMES ", JSON.stringify(Net.lan_games)))
 	if _args.has("shot"):  # --shot=out.png@5,9 saves out_5.png and out_9.png (real seconds)
 		var parts: PackedStringArray = _args.shot.split("@")
 		for when in (parts[1] if parts.size() > 1 else "3").split(","):
@@ -501,7 +652,7 @@ func _run_args() -> void:
 
 
 func _report() -> void:
-	var out := {online = Net.is_online(), players = Net.players.size(), in_match = _game != null,
+	var out := {online = Net.is_online(), players = Net.players.size(), in_match = _game != null, room = Net.room_code, status = _status.text,
 		ms_process = snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.01),
 		ms_physics = snappedf(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, 0.01),
 		fps = Performance.get_monitor(Performance.TIME_FPS), nodes = Performance.get_monitor(Performance.OBJECT_NODE_COUNT)}

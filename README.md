@@ -13,9 +13,25 @@ from each game and why.
 
 1. Install [Godot 4.7](https://godotengine.org/download) (standard build, no .NET needed).
 2. Open `game/project.godot` and press **Play** (F5).
-3. **Host game** → add bots with **+ Bot** if you like → **START MATCH**.
-   Friends click **Join game** and enter your IP. Over the internet, forward **UDP 7777** or share a LAN VPN
-   such as Tailscale or ZeroTier.
+3. **HOST GAME** gives you a 4-letter **room code**. Add bots with **+ BOT** if you like, then **START MATCH**.
+4. Friends click **JOIN GAME** and type the code. Nobody needs to port forward. Friends on the same Wi-Fi don't even
+   need the code: your game shows up in their list.
+
+### One-time setup: the online server
+
+Room codes go through a tiny relay server (`server/relay.js`). Everyone connects *out* to it, which is why no router
+setup is needed. (Super Battle Golf gets the same thing from Steam's relay, but that only works once a game is on
+Steam.) You deploy it once:
+
+1. Go to [render.com](https://render.com) and sign up with your GitHub account (free).
+2. **New → Blueprint** → pick this repository → **Apply**. `render.yaml` sets everything up.
+3. When it says *Live*, check the URL. If it's `https://bowling-your-friends-relay.onrender.com`, you're done.
+   If Render picked a different name, put it in the game under **Settings → Online server** as `wss://<that-host>`,
+   or set `DEFAULT_RELAY` in `game/scripts/net.gd` so everyone's build uses it.
+
+The free plan sleeps after 15 idle minutes. The game wakes it when it opens, but the first game of the day can take
+up to a minute to connect. For an always-awake server, use Render's paid Starter plan or run `server/Dockerfile` on
+any host. No internet? **HOST ON THIS WI-FI ONLY** (shown if online hosting fails) and direct IP still work.
 
 To give friends a build: **Project → Export** in Godot. Windows and Linux presets are included; Godot will
 offer to download the export templates the first time.
@@ -63,7 +79,8 @@ color stays the main body color, so you're always easy to spot in a pile.
 
 ```
 game/
-  scripts/net.gd        lobby and ENet connection (autoload)
+  scripts/net.gd        lobby, hosting/joining by room code, LAN discovery, direct IP (autoload)
+  scripts/relay_peer.gd MultiplayerPeer that tunnels through the relay over a WebSocket
   scripts/game.gd       match: host simulation, scoring, snapshots, client interpolation, camera
   scripts/beast.gd      the wobbly bowler: physics, fists, grab, bowl, knockout ball
   scripts/bowler_model.gd  the bowler's look: bean body + outfit shader, face with expressions, hats, gloves, shoes
@@ -85,4 +102,6 @@ godot --headless --path game -s tests/test_bowling.gd                       # co
 godot --headless --path game -- --host --bots=5 --autostart --timescale=3 --quit-after=30   # bot match, prints REPORT
 godot --path game -- --join=127.0.0.1 --name=Friend                         # second instance as a client
 python3 tools/make_music.py                                                 # re-render the music (numpy + oggenc)
+cd server && npm install && node relay.js                                   # run the relay locally (port 8080)
+godot --path game -- --relay=ws://127.0.0.1:8080 --host-online              # host through the local relay
 ```
