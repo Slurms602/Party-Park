@@ -91,7 +91,7 @@ var _speed := 0.0
 const BAR_SHADER := """
 shader_type spatial;
 render_mode unshaded, depth_test_disabled, cull_disabled, shadows_disabled;
-instance uniform float fill = 1.0;
+uniform float fill = 1.0;
 void vertex() {
 	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
 }
@@ -102,7 +102,8 @@ void fragment() {
 	ALPHA = 0.92;
 }
 """
-static var _bar_mat: ShaderMaterial
+static var _bar_shader: Shader
+var _bar_mat: ShaderMaterial
 
 
 func setup(id: int, info: Dictionary, a: Arena, simulate: bool) -> void:
@@ -466,7 +467,11 @@ func _update_hold(dt: float) -> void:
 			cooldown.grab = 1.0
 		return
 	if holding is Beast:
-		holding.global_position = global_position + Vector3.UP * 0.45 + f * 0.95
+		# Move toward the hold point at a capped speed: a carried (kinematic) ball that teleports when you spin
+		# would hit bystanders at hundreds of m/s and fling them into orbit.
+		var target := global_position + Vector3.UP * 0.45 + f * 0.95
+		var cur: Vector3 = holding.global_position
+		holding.global_position = target if cur.distance_to(target) > 3.0 else cur + (target - cur).limit_length(12.0 * dt)
 	else:  # a pin held like a club, swung forward on each punch
 		var swing := sin(PI * maxf(punch_t[0], punch_t[1]) / PUNCH_TIME)
 		holding.global_transform = Transform3D(Basis(Vector3.UP.cross(f).normalized(), 0.5 + swing * 1.1),
@@ -648,10 +653,11 @@ func _build_visuals() -> void:
 	_label.modulate = color.lightened(0.3)
 	_label.position.y = 1.45
 	_overlay.add_child(_label)
-	if _bar_mat == null:
-		_bar_mat = ShaderMaterial.new()
-		_bar_mat.shader = Shader.new()
-		_bar_mat.shader.code = BAR_SHADER
+	if _bar_shader == null:
+		_bar_shader = Shader.new()
+		_bar_shader.code = BAR_SHADER
+	_bar_mat = ShaderMaterial.new()
+	_bar_mat.shader = _bar_shader
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.8, 0.12)
 	_bar = Look.mesh(_overlay, quad, _bar_mat, Vector3(0, 1.27, 0))
@@ -707,7 +713,7 @@ func _process(dt: float) -> void:
 	_overlay.global_position = global_position
 	_label.position.y = 1.0 if balled else 1.45
 	_bar.visible = not balled and health < MAX_HEALTH - 0.5
-	_bar.set_instance_shader_parameter("fill", health / MAX_HEALTH)
+	_bar_mat.set_shader_parameter("fill", health / MAX_HEALTH)
 	var t := Time.get_ticks_msec() * 0.001
 	for i in _stars.size():
 		var a := t * 4.0 + TAU * i / _stars.size()

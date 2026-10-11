@@ -17,6 +17,16 @@ from each game and why.
 4. Friends click **JOIN GAME** and type the code. Nobody needs to port forward. Friends on the same Wi-Fi don't even
    need the code: your game shows up in their list.
 
+If the online server can't be reached, HOST GAME switches to hosting by IP by itself. It asks your router to open
+UDP 7777 (UPnP) and shows your internet IP in the lobby, and friends type that IP into the same JOIN box.
+
+### Builds for friends
+
+`builds/Bowling your Friends (Windows).zip` is a single `.exe` plus a one-page *How to play*. To rebuild it, use
+Godot **Project → Export → Windows**, or
+`godot --headless --path game --export-release "Windows" "../builds/windows/Bowling your Friends.exe"`.
+The game is unsigned, so Windows shows "Windows protected your PC" the first time: **More info → Run anyway**.
+
 ### One-time setup: the online server
 
 Room codes go through a tiny relay server (`server/relay.js`). Everyone connects *out* to it, which is why no router
@@ -31,7 +41,7 @@ Steam.) You deploy it once:
 
 The free plan sleeps after 15 idle minutes. The game wakes it when it opens, but the first game of the day can take
 up to a minute to connect. For an always-awake server, use Render's paid Starter plan or run `server/Dockerfile` on
-any host. No internet? **HOST ON THIS WI-FI ONLY** (shown if online hosting fails) and direct IP still work.
+any host.
 
 To give friends a build: **Project → Export** in Godot. Windows and Linux presets are included; Godot will
 offer to download the export templates the first time.

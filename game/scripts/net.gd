@@ -11,6 +11,7 @@ signal match_ended
 signal status(text: String)
 signal room_ready(code: String)
 signal lan_games_changed
+signal direct_info_changed  # public IP / router port status found while hosting by IP
 
 const PORT := 7777
 const BEACON_PORT := 7778
@@ -29,14 +30,26 @@ var lan_games := {}  # ip -> beacon info {name, n, code, port, seen}
 var _beacon := PacketPeerUDP.new()
 var _beacon_t := 0.0
 var _listen: PacketPeerUDP
+var public_ip := ""  # what friends type when hosting by IP
+var port_open := 0  # 1 = the router opened the port for us (UPnP), -1 = it didn't, 0 = still checking
+var _upnp: UPNP
+var _upnp_thread: Thread
 
 
 func _ready() -> void:
 	multiplayer.peer_connected.connect(func(_id): pass)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(func(): _register.rpc_id(1, Prefs.player_name, Prefs.skin))
-	multiplayer.connection_failed.connect(func(): leave(); status.emit("Could not connect."))
-	multiplayer.server_disconnected.connect(func(): leave(); status.emit("The host left."))
+	multiplayer.connection_failed.connect(func():
+		if multiplayer.multiplayer_peer is RelayPeer:
+			return  # RelayPeer reports its own, more specific error
+		leave()
+		status.emit("Couldn't connect to that IP. Double-check it with your host (they may need to forward port %d)." % PORT))
+	multiplayer.server_disconnected.connect(func():
+		if multiplayer.multiplayer_peer is RelayPeer:
+			return
+		leave()
+		status.emit("The host left."))
 	_wake_relay.call_deferred()
 
 
@@ -54,7 +67,7 @@ func host_online() -> void:
 		print("ROOM CODE ", c)
 		players_changed.emit()
 		room_ready.emit(c))
-	peer.failed.connect(_on_relay_failed, CONNECT_DEFERRED)
+	peer.failed.connect(_on_relay_failed.bind(peer), CONNECT_DEFERRED)
 	var err := peer.host(relay_url())
 	if err != OK:
 		status.emit("Couldn't start online hosting (%s)." % error_string(err))
@@ -65,7 +78,7 @@ func host_online() -> void:
 func join_code(code: String) -> void:
 	leave()
 	var peer := RelayPeer.new()
-	peer.failed.connect(_on_relay_failed, CONNECT_DEFERRED)
+	peer.failed.connect(_on_relay_failed.bind(peer), CONNECT_DEFERRED)
 	var err := peer.join(relay_url(), code)
 	if err != OK:
 		status.emit("Couldn't connect (%s)." % error_string(err))
@@ -74,7 +87,9 @@ func join_code(code: String) -> void:
 	multiplayer.multiplayer_peer = peer
 
 
-func _on_relay_failed(message: String) -> void:
+func _on_relay_failed(message: String, peer: RelayPeer) -> void:
+	if multiplayer.multiplayer_peer != peer:
+		return  # we've already moved on (e.g. hosting by IP instead)
 	leave()
 	status.emit(message)
 
@@ -98,16 +113,87 @@ func host_lan() -> String:
 	multiplayer.multiplayer_peer = peer
 	players = {1: _entry(Prefs.player_name, false, Prefs.skin)}
 	players_changed.emit()
+	_open_port()
 	return ""
 
 
-func join_ip(ip: String) -> String:
+func join_ip(address: String) -> String:
+	address = address.strip_edges()
+	var host := address
+	var port := PORT
+	if address.count(":") == 1:  # "1.2.3.4:7777"
+		host = address.get_slice(":", 0)
+		port = int(address.get_slice(":", 1))
 	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(ip.strip_edges(), PORT)
+	var err := peer.create_client(host, port)
 	if err != OK:
-		return "Could not connect to %s (%s)." % [ip, error_string(err)]
+		return "Couldn't connect to %s (%s)." % [address, error_string(err)]
 	multiplayer.multiplayer_peer = peer
 	return ""
+
+
+# ---------------------------------------------------------------- hosting by IP: open the router port, find the public IP
+
+func _open_port() -> void:
+	public_ip = ""
+	port_open = 0
+	_upnp_thread = Thread.new()
+	_upnp_thread.start(_upnp_work)  # router discovery blocks for ~2 s, so keep it off the main thread
+	var http := HTTPRequest.new()  # fallback in case the router doesn't speak UPnP
+	http.timeout = 10.0
+	add_child(http)
+	http.request_completed.connect(func(_r, code, _h, body):
+		var ip: String = body.get_string_from_utf8().strip_edges()
+		if code == 200 and ip.is_valid_ip_address() and public_ip == "":
+			public_ip = ip
+			direct_info_changed.emit()
+		http.queue_free())
+	if http.request("https://api.ipify.org") != OK:
+		http.queue_free()
+
+
+func _upnp_work() -> void:
+	var u := UPNP.new()
+	var ok := false
+	var ip := ""
+	if u.discover(2000, 2, "InternetGatewayDevice") == UPNP.UPNP_RESULT_SUCCESS and u.get_gateway() and u.get_gateway().is_valid_gateway():
+		ok = u.add_port_mapping(PORT, PORT, "Bowling your Friends", "UDP", 0) == UPNP.UPNP_RESULT_SUCCESS
+		ip = u.query_external_address()
+	_upnp_done.call_deferred(u if ok else null, ip)
+
+
+func _upnp_done(u: UPNP, ip: String) -> void:
+	_upnp_thread.wait_to_finish()
+	_upnp_thread = null
+	if not is_host() or room_code != "":  # left (or went online) while the router was answering
+		if u:
+			u.delete_port_mapping(PORT, "UDP")
+		return
+	_upnp = u
+	port_open = 1 if u else -1
+	if ip.is_valid_ip_address() and not _is_private(ip):
+		public_ip = ip
+	direct_info_changed.emit()
+
+
+func _close_port() -> void:
+	if _upnp:
+		_upnp.delete_port_mapping(PORT, "UDP")
+		_upnp = null
+
+
+static func _is_private(ip: String) -> bool:
+	var p := ip.split(".")
+	if p.size() != 4:
+		return false
+	var a := int(p[0])
+	var b := int(p[1])
+	return a == 10 or a == 127 or (a == 192 and b == 168) or (a == 172 and b >= 16 and b < 32) or (a == 100 and b >= 64 and b < 128)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_PREDELETE:
+		_close_port()
 
 
 func leave() -> void:
@@ -116,6 +202,9 @@ func leave() -> void:
 	multiplayer.multiplayer_peer = null
 	players.clear()
 	room_code = ""
+	public_ip = ""
+	port_open = 0
+	_close_port()
 	if in_match:
 		in_match = false
 		match_ended.emit()

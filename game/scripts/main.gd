@@ -14,7 +14,6 @@ var _status: Label
 var _cards: GridContainer
 var _length: OptionButton
 var _host_only: Array[Control] = []
-var _ip: LineEdit
 var _name: LineEdit
 var _preview: BowlerModel
 var _preview_holder: Control
@@ -29,8 +28,10 @@ var _room_card: PanelContainer
 var _room_code: Label
 var _conn_msg: Label
 var _conn_t := 0.0
-var _lan_host: Button
+var _room_title: Label
+var _room_note: Label
 var _back_to := "main"
+var _hosting := false  # waiting for an online room; fall back to hosting by IP if the server can't be reached
 
 
 func _ready() -> void:
@@ -46,10 +47,19 @@ func _ready() -> void:
 	Net.match_started.connect(_on_match_started)
 	Net.match_ended.connect(_on_match_ended)
 	Net.status.connect(func(t):
+		if _hosting:  # the online server isn't reachable: host by IP instead, without asking
+			_hosting = false
+			var err := Net.host_lan()
+			if err == "":
+				_show("lobby")
+				return
+			t = err
 		_status.text = t
-		_lan_host.visible = _back_to == "main"  # online hosting failed: offer the local-network fallback
 		_show(_back_to))
-	Net.room_ready.connect(func(_c): _show("lobby"))
+	Net.room_ready.connect(func(_c):
+		_hosting = false
+		_show("lobby"))
+	Net.direct_info_changed.connect(_refresh_lobby)
 	Net.lan_games_changed.connect(_refresh_lan)
 	Music.play("menu", 0.0)
 	_show(_args.get("screen", "main"))
@@ -116,6 +126,10 @@ func _build_ui() -> void:
 	stack.custom_minimum_size = Vector2(560, 540)
 	col.add_child(stack)
 	_status = UI.label(col, "", 20, Color(1, 1, 1, 0.8))
+	var version := UI.label(_ui, "v" + str(ProjectSettings.get_setting("application/config/version", "")), 16, Color(1, 1, 1, 0.45))
+	version.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	version.offset_left = -120
+	version.offset_top = -36
 	_status.custom_minimum_size.x = 640
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
@@ -125,31 +139,25 @@ func _build_ui() -> void:
 	UI.button(main, "CUSTOMIZE", func(): _show("customize"))
 	UI.button(main, "SETTINGS", func(): _show("settings"))
 	UI.button(main, "QUIT", func(): get_tree().quit())
-	_lan_host = UI.button(main, "HOST ON THIS WI-FI ONLY", func():
-		_status.text = Net.host_lan()
-		if Net.is_host():
-			_show("lobby"))
-	_lan_host.add_theme_font_size_override("font_size", 20)
-	_lan_host.visible = false
 
 	var join := _screen(stack, "join", "JOIN A GAME")
-	UI.label(join, "TYPE YOUR FRIEND'S ROOM CODE", 22, UI.CYAN)
+	UI.label(join, "TYPE THE CODE OR IP YOUR FRIEND GAVE YOU", 22, UI.CYAN)
 	var code_row := HBoxContainer.new()
 	code_row.add_theme_constant_override("separation", 12)
 	join.add_child(code_row)
 	_code = LineEdit.new()
-	_code.max_length = 4
-	_code.placeholder_text = "CODE"
+	_code.max_length = 21
+	_code.placeholder_text = "CODE / IP"
 	_code.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_code.custom_minimum_size = Vector2(260, 84)
+	_code.custom_minimum_size = Vector2(320, 84)
 	_code.add_theme_font_override("font", Look.title_font())
-	_code.add_theme_font_size_override("font_size", 56)
+	_code.add_theme_font_size_override("font_size", 44)
 	_code.text_changed.connect(func(t):
 		var up: String = t.to_upper().replace(" ", "")
 		if up != t:
 			_code.text = up
 			_code.caret_column = up.length()
-		if up.length() == 4:
+		if _is_code(up):
 			_join_code())  # no need to press anything once the code is in
 	_code.text_submitted.connect(func(_t): _join_code())
 	code_row.add_child(_code)
@@ -159,21 +167,6 @@ func _build_ui() -> void:
 	_lan_list.add_theme_constant_override("separation", 8)
 	join.add_child(_lan_list)
 	_lan_empty = UI.label(join, "Looking for games nearby...", 20, Color(1, 1, 1, 0.6))
-	UI.label(join, "OR CONNECT BY IP", 18, Color(1, 1, 1, 0.6))
-	var iprow := HBoxContainer.new()
-	iprow.add_theme_constant_override("separation", 10)
-	join.add_child(iprow)
-	_ip = LineEdit.new()
-	_ip.placeholder_text = "192.168.1.20"
-	_ip.custom_minimum_size = Vector2(300, 50)
-	iprow.add_child(_ip)
-	UI.button(iprow, "CONNECT", func():
-		_back_to = "join"
-		_connecting("Connecting to %s..." % _ip.text)
-		var err := Net.join_ip(_ip.text)
-		if err != "":
-			_status.text = err
-			_show("join"), 160)
 	UI.button(join, "BACK", func(): _show("main"))
 
 	var conn := _screen(stack, "connecting", "CONNECTING")
@@ -197,14 +190,17 @@ func _build_ui() -> void:
 	var rcv := VBoxContainer.new()
 	rcv.add_theme_constant_override("separation", -6)
 	rc.add_child(rcv)
-	UI.label(rcv, "ROOM CODE", 20, UI.CYAN, true)
+	_room_title = UI.label(rcv, "ROOM CODE", 20, UI.CYAN, true)
 	_room_code = UI.label(rcv, "", 64, UI.YELLOW, true)
 	var copy := UI.button(rc, "COPY", func(): pass, 130)
 	copy.pressed.connect(func():
-		DisplayServer.clipboard_set(Net.room_code)
+		DisplayServer.clipboard_set(_room_code.text)
 		copy.text = "COPIED!"
 		get_tree().create_timer(1.5).timeout.connect(func(): copy.text = "COPY"))
 	copy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_room_note = UI.label(lobby, "", 17, Color(1, 1, 1, 0.75))
+	_room_note.custom_minimum_size.x = 600
+	_room_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_cards = GridContainer.new()
 	_cards.columns = 2
 	_cards.add_theme_constant_override("h_separation", 12)
@@ -283,8 +279,8 @@ func _show(id: String) -> void:
 		Net.start_discovery()
 		_refresh_lan()
 		var clip := DisplayServer.clipboard_get().strip_edges().to_upper()
-		if clip.length() == 4 and clip.is_valid_identifier() and _code.text == "":
-			_code.text = clip  # a friend pasted the code in chat and you copied it
+		if _code.text == "" and (_is_code(clip) or (clip.count(".") == 3 and clip.length() <= 21)):
+			_code.text = clip  # a friend pasted the code/IP in chat and you copied it
 	elif id != "connecting":
 		Net.stop_discovery()
 	_logo_node.visible = id in ["main", "join"]  # sub-screens need the room
@@ -477,35 +473,57 @@ func _refresh_lobby() -> void:
 		_cards.add_child(card)
 	for c in _host_only:
 		c.visible = Net.is_host()
-	_room_card.visible = Net.room_code != ""
-	_room_code.text = Net.room_code
+	var lan := Array(IP.get_local_addresses()).filter(func(a): return a.count(".") == 3 and not a.begins_with("127.") and not a.begins_with("169.254."))
+	_status.text = ""
+	_room_note.text = ""
 	if Net.room_code != "":
-		_status.text = "Friends press JOIN GAME and type %s. Anyone on your Wi-Fi will also see your game listed there." % Net.room_code \
+		_room_card.visible = true
+		_room_title.text = "ROOM CODE"
+		_room_code.text = Net.room_code
+		_room_code.add_theme_font_size_override("font_size", 64)
+		_room_note.text = "Friends press JOIN GAME and type the code. Anyone on your Wi-Fi also sees your game listed there." \
 			if Net.is_host() else "Waiting for the host to start..."
 	elif Net.is_host():
-		var ips := Array(IP.get_local_addresses()).filter(func(a): return a.count(".") == 3 and not a.begins_with("127."))
-		_status.text = "Hosting on this network only. Friends on your Wi-Fi will see your game in JOIN GAME (or connect to %s)." \
-			% ", ".join(ips.slice(0, 2))
-	elif Net.is_online():
-		_status.text = "Waiting for the host to start..."
+		_room_card.visible = true
+		_room_title.text = "YOUR IP: FRIENDS TYPE THIS IN JOIN GAME"
+		_room_code.text = Net.public_ip if Net.public_ip != "" else "finding..."
+		_room_code.add_theme_font_size_override("font_size", 46)
+		var router: String = {0: "Asking your router to open the game port...", 1: "Your router opened the game port automatically.",
+			-1: "Your router didn't open the port automatically: forward UDP %d to this PC so friends outside your Wi-Fi can join." % Net.PORT}[Net.port_open]
+		_room_note.text = "%s Friends on your Wi-Fi: %s (it also shows up in their JOIN GAME list)." % [router, lan[0] if not lan.is_empty() else "-"]
+	else:
+		_room_card.visible = false
+		if Net.is_online():
+			_room_note.text = "Waiting for the host to start..."
 	_preview.build(_my_color(), Prefs.skin)
 
 
 func _host_online() -> void:
 	_back_to = "main"
-	_lan_host.visible = false
+	_hosting = true
 	_connecting("Creating your room...")
 	Net.host_online()
 
 
+func _is_code(s: String) -> bool:
+	return s.length() == 4 and s.is_valid_identifier() and not s.contains("_")
+
+
 func _join_code() -> void:
-	var code := _code.text.strip_edges().to_upper()
-	if code.length() != 4:
-		_status.text = "Room codes are 4 letters."
-		return
+	## One box for both: a 4-letter room code goes through the online server, anything else is treated as an IP.
+	var text := _code.text.strip_edges().to_upper()
 	_back_to = "join"
-	_connecting("Joining %s..." % code)
-	Net.join_code(code)
+	if _is_code(text):
+		_connecting("Joining %s..." % text)
+		Net.join_code(text)
+	elif text.count(".") == 3 or text.contains(":"):
+		_connecting("Connecting to %s..." % text)
+		var err := Net.join_ip(text)
+		if err != "":
+			_status.text = err
+			_show("join")
+	else:
+		_status.text = "Type the 4-letter code (like BRKT) or the IP (like 73.21.140.9) your friend gave you."
 
 
 func _connecting(msg: String) -> void:

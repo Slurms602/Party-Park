@@ -214,6 +214,8 @@ func _rerack(lane: Dictionary, beasts: Array) -> void:
 	for k in 10:
 		var p: RigidBody3D = lane.pins[k]
 		p.freeze = true
+		p.collision_layer = 0  # pins being re-racked pass through anything in their way
+		p.collision_mask = 0
 		tw.tween_property(p, "global_transform", Transform3D(Basis(), lane.rack[k] + Vector3.UP * 3.5), 0.5)
 	tw.chain().tween_interval(0.15)
 	tw.chain()
@@ -222,6 +224,8 @@ func _rerack(lane: Dictionary, beasts: Array) -> void:
 			.set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
 	tw.chain().tween_callback(func():
 		for p: RigidBody3D in lane.pins:
+			p.collision_layer = 1
+			p.collision_mask = 1
 			p.freeze = false
 			p.linear_velocity = Vector3.ZERO
 			p.angular_velocity = Vector3.ZERO
