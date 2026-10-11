@@ -8,3 +8,7 @@
 /builds/
 *.tmp
 *.log
+
+# Screenshots shared while debugging
+/me.PNG
+/friend.png
