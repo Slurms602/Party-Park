@@ -51,6 +51,8 @@ func _ready() -> void:
 	cam.current = true
 	hud = Hud.new()
 	add_child(hud)
+	if OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args():
+		add_child(TouchControls.new())
 	Music.duck(PRE_GAME)
 	Net.players_changed.connect(_sync_roster)
 	_sync_roster()
@@ -388,7 +390,7 @@ func _process(dt: float) -> void:
 		_dinged = full
 		hud.set_me(me.display_name, me.color, me.health, me.state >= Beast.BALL, maxf(me.ko_time, 0.0))
 		hud.set_charge(cam.unproject_position(me.global_position + Vector3.UP * 1.9), me.charge / Beast.FULL_CHARGE if me.charging else -1.0)
-		hud.set_prompts(_prompts(me))
+		hud.set_prompts(_touchify(_prompts(me)))
 	hud.set_time(time_left if pre <= 0.0 else Net.match_seconds)
 	arena.screen_board.time_left = time_left
 	arena.screen_board.queue_redraw()
@@ -435,6 +437,14 @@ func _prompts(me: Beast) -> Array:
 	if _match_t < 15.0:
 		return [["LMB", "PUNCH"], ["HOLD LMB", "HAYMAKER"], ["RMB", "GRAB"], ["SHIFT", "DIVE"]]
 	return []
+
+
+func _touchify(items: Array) -> Array:
+	## Same prompts, phrased for the on-screen buttons.
+	if not (OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args()):
+		return items
+	var names := {"LMB": "PUNCH", "HOLD LMB": "HOLD PUNCH", "RMB": "GRAB", "HOLD RMB": "HOLD GRAB", "SHIFT": "DIVE", "RELEASE": "LET GO"}
+	return items.map(func(it): return [names.get(it[0], it[0])] + it.slice(1))
 
 
 func _interpolate(dt: float) -> void:

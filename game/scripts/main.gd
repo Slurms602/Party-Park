@@ -88,6 +88,8 @@ func _input_map() -> void:
 			e.axis = axes[action][0]
 			e.axis_value = axes[action][1]
 			InputMap.action_add_event(action, e)
+	if OS.has_feature("mobile"):
+		return  # touches are emulated as mouse clicks; on phones the on-screen buttons do this instead
 	for pair in [["punch", MOUSE_BUTTON_LEFT], ["grab", MOUSE_BUTTON_RIGHT]]:
 		var e := InputEventMouseButton.new()
 		e.button_index = pair[1]
