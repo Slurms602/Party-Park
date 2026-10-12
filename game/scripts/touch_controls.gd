@@ -57,7 +57,7 @@ func _button(text: String, action: String, r: float, col: Color) -> TouchScreenB
 	b.set_meta("r", r)
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_override("font", Look.title_font())
+	l.add_theme_font_override("font", UI.display_font())
 	l.add_theme_font_size_override("font_size", int(r * 0.42))
 	l.add_theme_constant_override("outline_size", 8)
 	l.add_theme_color_override("font_outline_color", Color(0.05, 0.02, 0.12))

@@ -1,6 +1,6 @@
 class_name Hud
 extends CanvasLayer
-## Match HUD. Pieces taken from Super Battle Golf's UI and given a cosmic-bowling style:
+## Match HUD. Pieces taken from Super Battle Golf's UI, in the cream-and-ink style of the menus:
 ## tee-off style countdown, match-end countdown with urgency pops, kill-feed chips, callouts,
 ## a power bar over your bowler, button prompts, a player card, and a results screen with the winner dancing.
 
@@ -27,6 +27,7 @@ var _results: Control
 var _flash: ColorRect
 var _confetti: CPUParticles2D
 var _last_clock := -1
+var _card_style: StyleBoxFlat
 
 
 class Burst extends Control:
@@ -52,13 +53,14 @@ class ChargeMeter extends Control:
 		var full := fill >= 0.999
 		var wob := sin(Time.get_ticks_msec() * 0.03) * 3.0 if full else 0.0
 		var r := Rect2(Vector2(-70, -12 + wob), Vector2(140, 24))
-		draw_style_box(UI.box(Color(0.05, 0.02, 0.12, 0.9), Color.WHITE if full else UI.PINK, 0, 12), r)
+		draw_style_box(UI.pill(UI.NAVY, 3, 12), r)
 		var inner := Rect2(r.position + Vector2(5, 5), Vector2((r.size.x - 10) * fill, r.size.y - 10))
-		draw_rect(inner, UI.YELLOW.lerp(Color("ff3b4e"), fill) if not full else Color.WHITE.lerp(UI.YELLOW, 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.04)))
+		var fill_style := UI.pill(UI.MUSTARD.lerp(UI.RED, fill) if not full else UI.CREAM.lerp(UI.MUSTARD, 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.04)), 0, 8)
+		draw_style_box(fill_style, inner)
 		if full:
-			var f := Look.title_font()
-			draw_string_outline(f, Vector2(-26, -20 + wob), "MAX!", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 6, UI.INK)
-			draw_string(f, Vector2(-26, -20 + wob), "MAX!", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, UI.YELLOW)
+			var f := UI.display_font()
+			draw_string_outline(f, Vector2(-30, -20 + wob), "Max!", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 10, UI.NAVY)
+			draw_string(f, Vector2(-30, -20 + wob), "Max!", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, UI.MUSTARD)
 
 
 class BoxMarks extends Control:
@@ -68,12 +70,12 @@ class BoxMarks extends Control:
 		var bob := absf(sin(Time.get_ticks_msec() * 0.006)) * 6.0
 		for p: Vector2 in pts:
 			var c := p - Vector2(0, bob)
-			draw_circle(c, 24.0, Color("8a3dff"))
-			draw_arc(c, 24.0, 0.0, TAU, 32, Color("ffcc33"), 4.0)
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-10, 26), c + Vector2(10, 26), c + Vector2(0, 38)]), Color("ffcc33"))
-			var f := Look.title_font()
-			draw_string_outline(f, c + Vector2(-8, 11), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 32, 6, UI.INK)
-			draw_string(f, c + Vector2(-8, 11), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 32, Color.WHITE)
+			draw_circle(c + Vector2(0, 3), 26.0, Color(UI.NAVY, 0.3))
+			draw_circle(c, 26.0, UI.CREAM)
+			draw_circle(c, 21.0, UI.RED)
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-10, 25), c + Vector2(10, 25), c + Vector2(0, 38)]), UI.CREAM)
+			var f := UI.display_font()
+			draw_string(f, c + Vector2(-8, 11), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 32, UI.CREAM)
 
 
 func _ready() -> void:
@@ -90,12 +92,12 @@ func _ready() -> void:
 	_root.add_child(_flash)
 
 	_clock_pill = PanelContainer.new()
-	_clock_pill.add_theme_stylebox_override("panel", UI.box(Color(0.05, 0.02, 0.13, 0.85), UI.CYAN, 6, 30))
+	_clock_pill.add_theme_stylebox_override("panel", UI.card(UI.CREAM, 34, 5))
 	_clock_pill.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	_clock_pill.offset_top = 14
 	_clock_pill.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_root.add_child(_clock_pill)
-	_clock = UI.label(_clock_pill, "3:00", 54, Color.WHITE, true)
+	_clock = UI.label(_clock_pill, "3:00", 52, UI.NAVY, true)
 	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_clock.custom_minimum_size.x = 150
 
@@ -128,7 +130,9 @@ func _ready() -> void:
 	_banner = _center_label(64, -330)
 
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", UI.box(Color(0.05, 0.02, 0.13, 0.85), UI.PINK, 6, 16))
+	_card_style = UI.card(UI.CREAM, 22, 5)
+	_card_style.border_width_left = 12
+	card.add_theme_stylebox_override("panel", _card_style)
 	card.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	card.offset_left = 18
 	card.offset_top = -112
@@ -138,9 +142,9 @@ func _ready() -> void:
 	var cv := VBoxContainer.new()
 	cv.add_theme_constant_override("separation", 4)
 	card.add_child(cv)
-	_me_name = UI.label(cv, "", 28, Color.WHITE, true)
-	_health = UI.bar(cv, Color("3ddc97"))
-	_status = UI.label(cv, "", 18, Color(1, 1, 1, 0.75))
+	_me_name = UI.label(cv, "", 28, UI.NAVY, true)
+	_health = UI.bar(cv, UI.TEAL)
+	_status = UI.label(cv, "", 17, Color(UI.NAVY, 0.7))
 
 	_prompts = HBoxContainer.new()
 	_prompts.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
@@ -158,11 +162,11 @@ func _ready() -> void:
 	_boxes.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_boxes)
 
-	_pause = _overlay_panel("PAUSED")
+	_pause = _overlay_panel("Paused")
 	var pv := _pause.get_child(0)
-	UI.button(pv, "RESUME", func(): _toggle_pause())
-	for pair in [["MUSIC", "music"], ["SOUND FX", "sfx"]]:
-		UI.label(pv, pair[0], 20, UI.CYAN)
+	UI.primary(UI.button(pv, "Resume", func(): _toggle_pause()))
+	for pair in [["Music", "music"], ["Sound effects", "sfx"]]:
+		UI.label(pv, pair[0], 18, Color(UI.NAVY, 0.65))
 		var s := HSlider.new()
 		s.max_value = 1.0
 		s.step = 0.05
@@ -172,7 +176,7 @@ func _ready() -> void:
 			Prefs.set(pair[1], x)
 			Prefs.apply())
 		pv.add_child(s)
-	UI.button(pv, "LEAVE", func():
+	UI.button(pv, "Leave match", func():
 		Prefs.save()
 		Net.leave())
 
@@ -195,20 +199,19 @@ func _ready() -> void:
 	_confetti.emission_rect_extents = Vector2(700, 10)
 	var ramp := Gradient.new()
 	for i in 5:
-		ramp.add_point(i / 4.0, [UI.PINK, UI.YELLOW, UI.CYAN, Color("3ddc97"), Color("b980ff")][i])
+		ramp.add_point(i / 4.0, [UI.RED, UI.MUSTARD, UI.TEAL, UI.CREAM, Color("ff8fb1")][i])
 	_confetti.color_initial_ramp = ramp
 	_root.add_child(_confetti)
 
 
 func _center_label(size: int, y: float) -> Label:
-	var l := UI.label(_root, "", size, Color.WHITE, true)
+	var l := UI.hero(_root, "", size)
 	l.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	l.offset_left = -800
 	l.offset_right = 800
 	l.offset_top = y
 	l.offset_bottom = y + size * 1.3
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_constant_override("outline_size", size / 6)
 	l.modulate.a = 0.0
 	return l
 
@@ -248,17 +251,17 @@ func set_time(t: float) -> void:
 		countdown(str(secs), Color("ff3b4e"), 120)
 		Sfx.play_ui("tick", -2.0)
 	_last_clock = secs
-	_clock.add_theme_color_override("font_color", Color("ff5a6a") if secs <= 10 else (UI.YELLOW if secs <= 30 else Color.WHITE))
+	_clock.add_theme_color_override("font_color", UI.RED if secs <= 30 else UI.NAVY)
 
 
 func set_me(player_name: String, col: Color, health: float, balled: bool, ko_left: float) -> void:
 	_me_name.text = player_name
-	_me_name.add_theme_color_override("font_color", col.lightened(0.3))
+	_card_style.border_color = col
 	_health.value = health
 	var fill: StyleBoxFlat = _health.get_theme_stylebox("fill")
-	fill.bg_color = Color("ff3b4e") if health < 25 else (UI.YELLOW if health < 55 else Color("3ddc97"))
-	_status.text = "KNOCKED OUT  ·  %.1fs" % ko_left if balled else ("Woozy!" if health < 25 else "Ready to brawl")
-	_status.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
+	fill.bg_color = UI.RED if health < 25 else (UI.MUSTARD if health < 55 else UI.TEAL)
+	_status.text = "Knocked out  ·  %.1fs" % ko_left if balled else ("Woozy!" if health < 25 else "Ready to brawl")
+	_status.add_theme_color_override("font_color", Color(UI.NAVY, 0.7))
 
 
 func set_box_marks(pts: Array) -> void:
@@ -269,7 +272,7 @@ func set_box_marks(pts: Array) -> void:
 func set_item(text: String, col: Color) -> void:
 	## The item you're holding replaces the status line under your health bar.
 	_status.text = text
-	_status.add_theme_color_override("font_color", col)
+	_status.add_theme_color_override("font_color", col.darkened(0.45))  # item colours are bright; ink them for cream
 
 
 func set_prompts(items: Array) -> void:
@@ -285,11 +288,13 @@ func set_prompts(items: Array) -> void:
 		row.add_theme_constant_override("separation", 8)
 		var cap := PanelContainer.new()
 		var warn: bool = it.size() > 2
-		cap.add_theme_stylebox_override("panel", UI.box(Color("ff3b4e") if warn else Color("f4f1ea"), UI.INK, 4, 10))
-		var k := UI.label(cap, it[0], 22, Color.WHITE if warn else UI.INK, true)
-		k.add_theme_constant_override("outline_size", 0)
+		var style := UI.pill(UI.RED if warn else UI.NAVY, 4, 12)
+		style.content_margin_left = 14
+		style.content_margin_right = 14
+		cap.add_theme_stylebox_override("panel", style)
+		UI.label(cap, it[0], 20, UI.CREAM, true)
 		row.add_child(cap)
-		UI.label(row, it[1], 26, Color.WHITE, true)
+		UI.hero(row, UI.sentence(it[1]), 28)
 		_prompts.add_child(row)
 		UI.pop_in.call_deferred(row)
 
@@ -305,25 +310,35 @@ func set_charge(screen_pos: Vector2, fill: float) -> void:
 # ------------------------------------------------------------------ events
 
 func feed(text: String, col: Color) -> void:
-	feed_event(text, col, "", Color.WHITE)
+	feed_event(text, col, "", UI.NAVY)
 
 
-func feed_event(a: String, a_col: Color, verb: String, verb_col: Color, b := "", b_col := Color.WHITE) -> void:
-	## A kill-feed chip: [name] [VERB] [name] (Super Battle Golf's InfoFeedMessage layout).
+func feed_event(a: String, a_col: Color, verb: String, verb_col: Color, b := "", b_col := UI.NAVY) -> void:
+	## A kill-feed chip: [name] [VERB] [name] (Super Battle Golf's InfoFeedMessage layout), names inked in their colour.
 	var chip := PanelContainer.new()
-	chip.add_theme_stylebox_override("panel", UI.box(Color(0.05, 0.02, 0.13, 0.82), Color(1, 1, 1, 0.12), 3, 12))
+	var style := UI.card(UI.CREAM, 18, 4)
+	style.content_margin_top = 6
+	style.content_margin_bottom = 8
+	style.content_margin_left = 16
+	style.content_margin_right = 16
+	chip.add_theme_stylebox_override("panel", style)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	chip.add_child(row)
-	UI.label(row, a, 22, a_col.lightened(0.3))
+	UI.label(row, a, 22, a_col.darkened(0.35), true)
 	if verb != "":
 		var pill := PanelContainer.new()
-		pill.add_theme_stylebox_override("panel", UI.box(verb_col, verb_col.darkened(0.4), 0, 8))
-		var v := UI.label(pill, verb, 18, Color.WHITE, true)
-		v.add_theme_constant_override("outline_size", 4)
+		var ps := UI.pill(verb_col, 0, 12)
+		ps.content_margin_left = 12
+		ps.content_margin_right = 12
+		ps.content_margin_top = 2
+		ps.content_margin_bottom = 4
+		pill.add_theme_stylebox_override("panel", ps)
+		UI.label(pill, UI.sentence(verb), 17, UI.CREAM, true)
+		pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(pill)
 	if b != "":
-		UI.label(row, b, 22, b_col.lightened(0.3))
+		UI.label(row, b, 22, b_col.darkened(0.35), true)
 	_feed.add_child(chip)
 	UI.pop_in.call_deferred(chip)
 	if _feed.get_child_count() > 6:
@@ -335,7 +350,7 @@ func feed_event(a: String, a_col: Color, verb: String, verb_col: Color, b := "",
 
 
 func callout(text: String, col: Color, sub := "", confetti := false) -> void:
-	_big.text = text
+	_big.text = UI.sentence(text)
 	_big.add_theme_color_override("font_color", col)
 	_sub.text = sub
 	_burst.color = col
@@ -391,10 +406,10 @@ func results(rows: Array, winner_color: Color, winner_skin: Dictionary, prog := 
 	_results.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(_results)
 	var dim := ColorRect.new()
-	dim.color = Color(0.03, 0.01, 0.08, 0.0)
+	dim.color = Color(UI.NAVY, 0.0)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_results.add_child(dim)
-	dim.create_tween().tween_property(dim, "color:a", 0.8, 0.6)
+	dim.create_tween().tween_property(dim, "color:a", 0.6, 0.6)
 
 	# The winner dances on a spotlit turntable.
 	var svc := SubViewportContainer.new()
@@ -427,32 +442,33 @@ func results(rows: Array, winner_color: Color, winner_skin: Dictionary, prog := 
 	model.build(winner_color, winner_skin)
 	_results.set_meta("model", model)
 
+	var card := PanelContainer.new()
+	card.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	card.offset_left = -860
+	card.offset_top = -380
+	_results.add_child(card)
 	var v := VBoxContainer.new()
-	v.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
-	v.offset_left = -840
-	v.offset_top = -330
-	v.add_theme_constant_override("separation", 10)
-	_results.add_child(v)
-	var winner: Dictionary = rows[0] if not rows.is_empty() else {name = "Nobody", color = Color.WHITE}
-	UI.label(v, "WINNER!", 64, UI.YELLOW, true)
-	var w := UI.label(v, winner.name, 96, winner.color.lightened(0.25), true)
-	w.add_theme_constant_override("outline_size", 18)
+	v.add_theme_constant_override("separation", 8)
+	card.add_child(v)
+	var winner: Dictionary = rows[0] if not rows.is_empty() else {name = "Nobody", color = UI.NAVY}
+	UI.label(v, "Winner!", 46, UI.RED, true)
+	UI.label(v, winner.name, 88, UI.NAVY, true)
 	var table := GridContainer.new()
 	table.columns = 6
-	table.add_theme_constant_override("h_separation", 26)
-	table.add_theme_constant_override("v_separation", 6)
+	table.add_theme_constant_override("h_separation", 28)
+	table.add_theme_constant_override("v_separation", 4)
 	v.add_child(table)
-	for head in ["#", "BOWLER", "PTS", "X", "/", "KO"]:
-		UI.label(table, head, 22, UI.CYAN, true)
+	for head in ["#", "Bowler", "Pts", "X", "/", "KO"]:
+		UI.label(table, head, 18, Color(UI.NAVY, 0.55), true)
 	for i in rows.size():
 		var r: Dictionary = rows[i]
 		var cells := [str(i + 1), r.name, str(r.total), str(r.get("strikes", 0)), str(r.get("spares", 0)), str(r.get("kos", 0))]
 		for c in cells.size():
-			UI.label(table, cells[c], 30 if c != 1 else 28, r.color.lightened(0.3) if c == 1 else Color.WHITE, c != 1)
+			UI.label(table, cells[c], 28, r.color.darkened(0.35) if c == 1 else UI.NAVY, true)
 	if not prog.is_empty():
 		_progress_panel(v, prog)
-	UI.label(v, "Back to the lobby in a few seconds...", 20, Color(1, 1, 1, 0.6))
-	UI.pop_in.call_deferred(v)
+	UI.label(v, "Back to the lobby in a few seconds...", 17, Color(UI.NAVY, 0.55))
+	UI.pop_in.call_deferred(card)
 	_confetti.position = Vector2(_root.size.x * 0.5, -20)
 	_confetti.restart()
 
@@ -464,9 +480,9 @@ func _progress_panel(parent: Control, prog: Dictionary) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	parent.add_child(row)
-	UI.label(row, "+%d XP" % prog.xp, 30, UI.YELLOW, true)
-	var lvl := UI.label(row, "LEVEL %d" % a.level, 30, Color.WHITE, true)
-	var bar := UI.bar(row, UI.YELLOW, 300, 22)
+	UI.label(row, "+%d XP" % prog.xp, 30, UI.RED, true)
+	var lvl := UI.label(row, "Level %d" % a.level, 30, UI.NAVY, true)
+	var bar := UI.bar(row, UI.RED, 300, 20)
 	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bar.value = 100.0 * a.into / a.need
 	var tw := bar.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
@@ -474,16 +490,16 @@ func _progress_panel(parent: Control, prog: Dictionary) -> void:
 	if b.level > a.level:
 		tw.tween_property(bar, "value", 100.0, 0.6)
 		tw.tween_callback(func():
-			lvl.text = "LEVEL %d" % b.level
-			lvl.add_theme_color_override("font_color", UI.YELLOW)
+			lvl.text = "Level %d" % b.level
+			lvl.add_theme_color_override("font_color", UI.RED)
 			UI.pop_in(lvl)
 			Sfx.play_ui("spare")
 			bar.value = 0.0)
 	tw.tween_property(bar, "value", 100.0 * b.into / b.need, 0.6)
-	var lines: Array = prog.achievements.map(func(id): return ["ACHIEVEMENT  ·  " + Progress.ACHIEVEMENTS[id].name, UI.CYAN])
-	lines += prog.unlocks.map(func(r): return ["UNLOCKED  ·  " + Progress.reward_name(r), UI.PINK])
+	var lines: Array = prog.achievements.map(func(id): return ["Achievement  ·  " + Progress.ACHIEVEMENTS[id].name, UI.TEAL])
+	lines += prog.unlocks.map(func(r): return ["Unlocked  ·  " + Progress.reward_name(r), UI.RED])
 	for i in mini(lines.size(), 4):
-		UI.label(parent, lines[i][0] if i < 3 or lines.size() == 4 else "...and %d more: check CUSTOMIZE" % (lines.size() - 3), 24, lines[i][1], true)
+		UI.label(parent, lines[i][0] if i < 3 or lines.size() == 4 else "...and %d more: check Customize" % (lines.size() - 3), 22, lines[i][1], true)
 
 
 func _process(dt: float) -> void:

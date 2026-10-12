@@ -504,7 +504,7 @@ func _process(dt: float) -> void:
 		if me.item != "" and me.state < Beast.BALL:
 			var k: Dictionary = Powerups.KINDS[me.item]
 			var left := "%d swings" % me.item_uses if me.item == "giant_pin" else "%ds" % ceili(me.item_t)
-			hud.set_item("%s: %s  ·  %s" % [k.name, k.hint, left], k.color)
+			hud.set_item("%s: %s  ·  %s" % [UI.sentence(k.name), k.hint, left], k.color)
 		hud.set_charge(cam.unproject_position(me.global_position + Vector3.UP * 1.9), me.charge / Beast.FULL_CHARGE if me.charging else -1.0)
 		hud.set_prompts(_touchify(_prompts(me)))
 	hud.set_box_marks(_box_marks())
@@ -519,10 +519,10 @@ func _match_flow(dt: float) -> void:
 	var p := int(ceil(pre))
 	if p != _pre_shown:
 		if p > 0:
-			hud.countdown(str(p), Color.WHITE)
+			hud.countdown(str(p), UI.CREAM)
 			Sfx.play_ui("beep")
 		elif _pre_shown > 0:
-			hud.countdown("BOWL!", Color("ffe14d"), 180)
+			hud.countdown("Bowl!", UI.MUSTARD, 180)
 			Sfx.play_ui("go")
 			Music.play("match", 0.3)
 		_pre_shown = p
@@ -532,7 +532,7 @@ func _match_flow(dt: float) -> void:
 			Music.play("match", 0.5)
 		if time_left <= HURRY_AT and not _hurried:
 			_hurried = true
-			hud.banner("HURRY UP!", Color("ff5a6a"))
+			hud.banner("Hurry up!", UI.RED)
 			Sfx.play_ui("hurry")
 			Music.play("hurry", 0.8)
 
