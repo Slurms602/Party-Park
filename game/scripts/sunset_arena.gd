@@ -245,8 +245,12 @@ func _decor() -> void:
 	plinth.bottom_radius = 1.5
 	plinth.height = 0.8
 	Look.mesh(self, plinth, Look.toy(TEAL, 0.4), Vector3(half_w + 4.8, 0.4, -16.0))
-	_palms()
-	_city()
+	if Look.high():
+		Dressing.sunset(self)
+		Dressing.skyline(self)
+	else:
+		_palms()
+		_city()
 
 
 func _palms() -> void:

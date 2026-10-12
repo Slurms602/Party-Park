@@ -532,6 +532,7 @@ func _decor() -> void:
 		add_child(n)
 	if Look.high():
 		_stage_lights()
+		Dressing.cosmic(self)
 	Look.mesh(self, Look.box(Vector3(11.3, 3.8, 0.02)), Look.neon(Color("ff3fb4"), 1.0), Vector3(0, screen_y, mask_front + 0.01))
 
 
@@ -600,6 +601,6 @@ func _furniture() -> void:
 	var screen := Look.mesh(self, scr, sm, Vector3(0, screen_y, mask_front + 0.05))  # mounted on the masking unit
 	screen.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-	# Benches on the brawling floor give people something to fall over.
-	for s in [-1.0, 1.0]:
+	# Benches on the brawling floor give people something to fall over (high graphics has props for that).
+	for s in ([] if Look.high() else [-1.0, 1.0]):
 		_solid(Vector3(3.2, 0.5, 0.8), Vector3(s * 5.0, 0.25, 9.6), Look.toy(style.bench, 0.5))

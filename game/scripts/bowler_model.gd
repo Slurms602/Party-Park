@@ -11,7 +11,161 @@ uniform vec3 accent : source_color = vec3(1.0);
 uniform int pattern = 0;
 uniform float flash = 0.0;
 uniform float coat = 0.0;  // high graphics: glossy vinyl with a little light passing through
+// High graphics: the face is painted onto the body (Fall Guys / Super Battle Golf style) instead of built from spheres.
+uniform bool painted_face = false;
+uniform int eye_kind = 0;  // Skins.SLOTS.eyes index
+uniform int mouth_kind = 0;  // Skins.SLOTS.mouth index
+uniform int mood = 0;  // 0 idle, 1 angry, 2 hurt, 3 woozy, 4 happy, 5 knocked out
+uniform float blink = 0.0;  // 1 = lids shut
+uniform vec2 look = vec2(0.0);  // pupils, -1..1
+const vec3 INK = vec3(0.07, 0.05, 0.11);
+const vec3 WHITE = vec3(0.98, 0.97, 0.95);
+const vec3 MOUTH_IN = vec3(0.34, 0.05, 0.1);
+const vec3 TONGUE = vec3(0.96, 0.43, 0.52);
 float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float sd_ellipse(vec2 p, vec2 r) {
+	float k0 = length(p / r);
+	float k1 = length(p / (r * r));
+	return k0 * (k0 - 1.0) / max(k1, 1e-5);
+}
+float sd_seg(vec2 p, vec2 a, vec2 b, float r) {
+	vec2 pa = p - a;
+	vec2 ba = b - a;
+	return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)) - r;
+}
+float sd_rbox(vec2 p, vec2 b, float r) {
+	vec2 q = abs(p) - b + r;
+	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+float ink(float d, float aa) { return 1.0 - smoothstep(-aa, aa, d); }
+vec3 paint(vec3 dst, vec3 c, float a) { return mix(dst, c, clamp(a, 0.0, 1.0)); }
+
+vec3 eye(vec3 o, vec2 q, vec2 r, float s, float aa, inout vec3 em) {
+	// q: point relative to the eye centre; s: -1 left eye, +1 right eye, 0 cyclops
+	if (mood == 5) {  // knocked out: X
+		float d = min(sd_seg(q, -r.xx * 0.7, r.xx * 0.7, 0.017), sd_seg(q, vec2(-r.x, r.x) * 0.7, vec2(r.x, -r.x) * 0.7, 0.017));
+		return paint(o, INK, ink(d, aa));
+	}
+	if (mood == 2) {  // hurt: squeezed shut, > <
+		vec2 tip = vec2(-s * r.x * 0.55, 0.0);
+		float d = min(sd_seg(q, vec2(s * r.x * 0.7, r.y * 0.55), tip, 0.017), sd_seg(q, vec2(s * r.x * 0.7, -r.y * 0.55), tip, 0.017));
+		return paint(o, INK, ink(d, aa));
+	}
+	if (mood == 4) {  // happy: closed smiling arcs
+		float d = abs(length(q + vec2(0.0, r.y * 0.45)) - r.x * 0.8) - 0.016;
+		d = max(d, -(q.y + r.y * 0.05));
+		return paint(o, INK, ink(d, aa));
+	}
+	float de = sd_ellipse(q, r);
+	float inside = ink(de, aa);
+	o = paint(o, INK, ink(de - 0.014, aa));
+	o = paint(o, WHITE, inside);
+	vec2 pc = look * r * 0.42 + vec2(0.0, -r.y * 0.06);
+	float pr = r.x * (eye_kind == 3 ? 0.42 : 0.56);
+	float dp = length(q - pc) - pr;
+	vec3 pcol = INK;
+	if (eye_kind == 8) {  // laser: glowing red
+		pcol = vec3(1.0, 0.12, 0.14);
+		em += pcol * 2.5 * ink(dp, aa) * inside;
+	}
+	if (eye_kind == 9) {  // sparkle: gold four-point stars
+		pcol = vec3(1.0, 0.76, 0.18);
+		dp = min(sd_ellipse(q - pc, vec2(pr * 1.15, pr * 0.32)), sd_ellipse(q - pc, vec2(pr * 0.32, pr * 1.15)));
+		em += pcol * 0.8 * ink(dp, aa) * inside;
+	}
+	o = paint(o, pcol, ink(dp, aa) * inside);
+	o = paint(o, vec3(1.0), ink(length(q - pc - vec2(-pr * 0.33, pr * 0.38)) - pr * 0.3, aa) * inside);  // catch-lights
+	o = paint(o, vec3(1.0), ink(length(q - pc - vec2(pr * 0.38, -pr * 0.32)) - pr * 0.13, aa) * inside);
+	// Upper lid: comes down to blink, rests half shut when sleepy, slants toward the nose when angry.
+	float shut = max(blink, eye_kind == 1 ? 0.45 : 0.0);
+	float lid_line = r.y * (1.0 - 2.0 * shut);
+	if (mood == 1 || eye_kind == 2) {
+		lid_line = min(lid_line, r.y * 0.4 - (-s * q.x) * 0.9);
+	}
+	if (lid_line < r.y * 0.98) {
+		float lid = inside * smoothstep(lid_line - aa, lid_line + aa, q.y);
+		o = paint(o, base * 0.92, lid);
+		o = paint(o, INK, inside * (1.0 - smoothstep(0.006, 0.006 + aa * 2.0, abs(q.y - lid_line))));
+	}
+	return o;
+}
+
+vec3 brow(vec3 o, vec2 q, float s, float aa) {
+	float tilt = mood == 1 || eye_kind == 2 ? 1.0 : (mood == 2 ? -0.8 : (mood == 3 ? -0.5 : 0.0));
+	float lift = mood == 4 ? 0.02 : 0.0;
+	vec2 inner = vec2(-s * 0.055, lift - tilt * 0.025);
+	vec2 outer = vec2(s * 0.06, lift + tilt * 0.02);
+	if (s == 0.0) {
+		inner = vec2(-0.08, lift - tilt * 0.01);
+		outer = vec2(0.08, lift - tilt * 0.01);
+	}
+	return paint(o, INK, ink(sd_seg(q, inner, outer, 0.016), aa));
+}
+
+vec3 mouth(vec3 o, vec2 q, float aa) {
+	if (mood == 5 || mood == 3) {  // knocked out or woozy: a wobbly line
+		float d = max(abs(q.y - sin(q.x * 70.0) * 0.008) - 0.009, abs(q.x) - 0.065);
+		return paint(o, INK, ink(d, aa));
+	}
+	if (mood == 2) {  // hurt: a small "oh!"
+		float d = sd_ellipse(q, vec2(0.032, 0.042));
+		o = paint(o, INK, ink(d - 0.013, aa));
+		return paint(o, MOUTH_IN, ink(d, aa));
+	}
+	if (mood == 1) {  // winding up: gritted teeth
+		float d = sd_rbox(q, vec2(0.07, 0.028), 0.022);
+		o = paint(o, INK, ink(d - 0.013, aa));
+		o = paint(o, WHITE, ink(d, aa));
+		float gaps = min(abs(q.y) - 0.003, abs(fract(q.x / 0.028 + 0.5) - 0.5) * 0.028 - 0.002);
+		return paint(o, INK, ink(gaps, aa) * ink(d, aa));
+	}
+	if (mouth_kind == 7) {  // kiss
+		float d = sd_ellipse(q, vec2(0.028, 0.034));
+		o = paint(o, vec3(0.86, 0.12, 0.3), ink(d - 0.016, aa));
+		o = paint(o, vec3(0.45, 0.04, 0.14), ink(d, aa));
+		return paint(o, vec3(1.0, 0.7, 0.8), ink(length(q - vec2(-0.016, 0.026)) - 0.006, aa));
+	}
+	if ((mouth_kind == 1 || mouth_kind == 3 || mouth_kind == 5) && mood != 4) {  // closed smile
+		float d = max(abs(length(q - vec2(0.0, 0.1)) - 0.11) - 0.011, q.y - 0.01);
+		o = paint(o, INK, ink(d, aa));
+		for (float s = -1.0; s <= 1.0; s += 2.0) {
+			o = paint(o, INK, ink(sd_seg(q, vec2(s * 0.072, 0.024), vec2(s * 0.088, 0.04), 0.008), aa));
+		}
+		return o;
+	}
+	// The open grin: flat top, round bottom, teeth up top and a tongue in the bottom.
+	float w = mood == 4 ? 0.1 : 0.084;
+	float dep = mood == 4 ? 0.085 : 0.066;
+	vec2 m = q - vec2(0.0, 0.016);
+	float d = max(sd_ellipse(m, vec2(w, dep)), m.y);
+	float in_m = ink(d, aa);
+	o = paint(o, INK, ink(d - 0.013, aa));
+	o = paint(o, MOUTH_IN, in_m);
+	o = paint(o, TONGUE, ink(sd_ellipse(m - vec2(0.0, -dep * 0.78), vec2(w * 0.55, dep * 0.42)), aa) * in_m);
+	if (mouth_kind == 0 || mouth_kind == 4 || mood == 4) {
+		o = paint(o, WHITE, smoothstep(-0.022 - aa, -0.022 + aa, m.y) * in_m);
+	}
+	if (mouth_kind == 2) {  // buck teeth
+		o = paint(o, WHITE, ink(sd_rbox(m - vec2(0.0, -0.022), vec2(0.03, 0.026), 0.006), aa) * in_m);
+		o = paint(o, INK, ink(abs(m.x) - 0.0025, aa) * ink(sd_rbox(m - vec2(0.0, -0.022), vec2(0.03, 0.026), 0.006), aa));
+	}
+	if (mouth_kind == 6) {  // fangs
+		for (float s = -1.0; s <= 1.0; s += 2.0) {
+			vec2 f = m - vec2(s * 0.045, 0.0);
+			float tri = max(abs(f.x) * 2.2 + (-f.y) * 0.9 - 0.04, f.y);
+			o = paint(o, WHITE, ink(tri, aa));
+		}
+	}
+	if (mouth_kind == 4) {  // tongue out past the lip
+		vec2 tq = q - vec2(0.022, -dep - 0.012);
+		float dt = sd_ellipse(tq, vec2(0.036, 0.046));
+		o = paint(o, INK, ink(dt - 0.012, aa) * step(tq.y, 0.03));
+		o = paint(o, TONGUE, ink(dt, aa));
+		o = paint(o, vec3(0.8, 0.28, 0.36), ink(sd_seg(tq, vec2(0.0, 0.0), vec2(0.0, -0.025), 0.004), aa));
+	}
+	return o;
+}
+
 void fragment() {
 	float u = UV.x;
 	float v = UV.y;  // 0 = feet, 1 = top of the head
@@ -86,6 +240,30 @@ void fragment() {
 		col = mix(col, rb, shirt);
 		em = rb * shirt * 0.15;
 	}
+	if (painted_face) {
+		vec2 p = vec2(fu * 6.2832 * 0.42, v * 1.5 - 0.75);  // metres across the front of the face
+		if (abs(p.x) < 0.45 && p.y > -0.05 && p.y < 0.75) {
+			float aa = fwidth(p.x) * 1.1;
+			if (mood == 0 || mood == 4) {  // rosy cheeks
+				for (float s = -1.0; s <= 1.0; s += 2.0) {
+					col = mix(col, vec3(1.0, 0.45, 0.5), 0.3 * ink(sd_ellipse(p - vec2(s * 0.215, 0.255), vec2(0.05, 0.028)), aa * 3.0));
+				}
+			}
+			if (eye_kind != 5 && eye_kind != 7) {  // shades and visor are 3D and cover the eyes
+				if (eye_kind == 4) {
+					col = eye(col, p - vec2(0.0, 0.41), vec2(0.125, 0.145), 0.0, aa, em);
+					if (mood != 5) { col = brow(col, p - vec2(0.0, 0.6), 0.0, aa); }
+				} else {
+					vec2 r = eye_kind == 3 ? vec2(0.1, 0.12) : vec2(0.085, 0.104);
+					for (float s = -1.0; s <= 1.0; s += 2.0) {
+						col = eye(col, p - vec2(s * 0.145, 0.39), r, s, aa, em);
+						if (mood != 5) { col = brow(col, p - vec2(s * 0.145, 0.535), s, aa); }
+					}
+				}
+			}
+			col = mouth(col, p - vec2(0.0, 0.165), aa);
+		}
+	}
 	ALBEDO = col;
 	METALLIC = metal;
 	CLEARCOAT = coat;
@@ -105,6 +283,7 @@ static var _body_mesh: ArrayMesh
 static var _body_shader: Shader
 
 var color := Color.WHITE
+var _painted := false  # high graphics: the face is painted by the body shader
 var skin := {}
 var _upper: Node3D  # body + face + hat: leans as one piece
 var _body_mat: ShaderMaterial
@@ -151,6 +330,10 @@ func build(c: Color, s: Dictionary) -> void:
 	_body_mat.set_shader_parameter("accent", accent)
 	_body_mat.set_shader_parameter("pattern", Skins.SLOTS.outfit.find(skin.outfit))
 	_body_mat.set_shader_parameter("coat", 0.6 if Look.high() else 0.0)
+	_painted = Look.high()
+	_body_mat.set_shader_parameter("painted_face", _painted)
+	_body_mat.set_shader_parameter("eye_kind", Skins.SLOTS.eyes.find(skin.eyes))
+	_body_mat.set_shader_parameter("mouth_kind", Skins.SLOTS.mouth.find(skin.mouth))
 	_body_mat.next_pass = Look.outline()
 	var body := MeshInstance3D.new()
 	body.mesh = _bean()
@@ -225,6 +408,8 @@ func _build_eyes(accent: Color) -> void:
 	var kind: String = skin.eyes
 	var big := 0.13 if kind == "googly" or kind == "nerd" else 0.115
 	var spots := [Vector3(0, 0.42, -0.33)] if kind == "cyclops" else [Vector3(-0.15, 0.38, -0.34), Vector3(0.15, 0.38, -0.34)]
+	if _painted:
+		spots = []  # painted on the body; only glasses and visors below are 3D
 	for p in spots:
 		var r := 0.17 if kind == "cyclops" else big
 		var eye := Node3D.new()
@@ -242,7 +427,7 @@ func _build_eyes(accent: Color) -> void:
 			var lid := _part(eye, Look.sphere(r * 1.08), Look.toy(color, 0.35, false), Vector3(0, r * 0.35, 0), Vector3(1, 0.62, 1))
 			_lids.append(lid)
 		_eyes.append(eye)
-	for side in ([0.0] if kind == "cyclops" else [-1.0, 1.0]):
+	for side in ([] if _painted else [0.0] if kind == "cyclops" else [-1.0, 1.0]):
 		_brows.append(_part(_upper, Look.box(Vector3(0.13 if kind != "cyclops" else 0.22, 0.035, 0.04)), black,
 			Vector3(side * 0.15, 0.53, -0.32)))
 	if kind == "angry":
@@ -290,6 +475,8 @@ func _build_mouth(accent: Color) -> void:
 	open.radius = 0.09
 	open.height = 0.09
 	open.is_hemisphere = true
+	if _painted and not kind in ["mustache", "beard"]:
+		return  # painted on the body
 	match kind:
 		"grin":
 			_part(_mouth, Look.box(Vector3(0.26, 0.08, 0.04)), black)
@@ -303,7 +490,8 @@ func _build_mouth(accent: Color) -> void:
 			for s in [-1.0, 1.0]:
 				_part(_mouth, Look.box(Vector3(0.05, 0.07, 0.03)), white, Vector3(s * 0.028, -0.045, -0.01))
 		"mustache", "beard":
-			_part(_mouth, Look.box(Vector3(0.14, 0.04, 0.04)), black, Vector3(0, -0.03, 0))
+			if not _painted:
+				_part(_mouth, Look.box(Vector3(0.14, 0.04, 0.04)), black, Vector3(0, -0.03, 0))
 			var hair := Look.toy(Color("4a2a14") if kind == "mustache" else accent.darkened(0.3), 0.6)
 			for s in [-1.0, 1.0]:
 				_part(_mouth, Look.sphere(0.07), hair, Vector3(s * 0.08, 0.035, -0.02), Vector3(1.5, 0.6, 0.7), Vector3(0, 0, s * 0.35))
@@ -332,6 +520,14 @@ func _build_hat(accent: Color) -> void:
 	dome.radius = 0.38
 	dome.height = 0.38
 	dome.is_hemisphere = true
+	if _painted and _model_mesh("hat_" + kind) != null:
+		_model(_upper, "hat_" + kind, _roles(accent))
+		if kind == "propeller":
+			_spinner = Node3D.new()
+			_spinner.position = Vector3(0, 1.05, 0)
+			_upper.add_child(_spinner)
+			_model(_spinner, "hat_propeller_blades", _roles(accent))
+		return
 	match kind:
 		"cap":
 			_part(_upper, dome, mat, Vector3(0, 0.56, 0), Vector3(1.02, 0.95, 1.02))
@@ -442,9 +638,61 @@ func _build_hat(accent: Color) -> void:
 			_part(_upper, _cyl(0.25, 0.265, 0.09), Look.toy(Color("e8323c"), 0.5), Vector3(0, 0.73, 0))
 
 
+static var _models := {}  # cosmetics.glb object name -> Mesh (high graphics; made by tools/blender/cosmetics.py)
+
+
+static func _model_mesh(id: String) -> Mesh:
+	if _models.is_empty():
+		var scene: Node = load("res://assets/models/cosmetics.glb").instantiate()
+		for mi: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+			_models[String(mi.name)] = mi.mesh
+		scene.free()
+	return _models.get(id)
+
+
+func _model(parent: Node, id: String, roles := {}) -> MeshInstance3D:
+	## A Blender-made cosmetic. Materials named after a role (Accent, Body, ShoeA...) take this bowler's colours;
+	## the rest keep theirs, all in the same toy finish as everything else.
+	var mesh := _model_mesh(id)
+	if mesh == null:
+		return null
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	parent.add_child(mi)
+	for i in mesh.get_surface_count():
+		var src := mesh.surface_get_material(i) as BaseMaterial3D
+		var col: Color = roles.get(src.resource_name, src.albedo_color) if src else Color.WHITE
+		var m := Look.toy(col, src.roughness if src else 0.4)
+		if src:
+			m.metallic = src.metallic
+			if src.emission_enabled:
+				m.emission_enabled = true
+				m.emission = src.emission
+				m.emission_energy_multiplier = src.emission_energy_multiplier
+		mi.set_surface_override_material(i, m)
+	return mi
+
+
+func _roles(accent: Color) -> Dictionary:
+	return {Accent = accent, AccentDark = accent.darkened(0.35), Body = color, BodyDark = color.darkened(0.1)}
+
+
 func _glove(side: float) -> Node3D:
 	var g := Node3D.new()
 	add_child(g)
+	g.position = Vector3(side * 0.55, 0.0, -0.15)
+	if _painted:
+		var accent: Color = Skins.ACCENTS[skin.accent]
+		var roles := _roles(accent)
+		var id: String = {boxing = "glove_boxing", cartoon = "glove_cartoon"}.get(skin.gloves, "glove_mitt")
+		if skin.gloves == "gold":
+			roles.BodyDark = Color("ffcc33")
+			roles.Accent = Color("e0a810")
+		if skin.gloves != "lava" and skin.gloves != "diamond":
+			var mi := _model(g, id, roles)
+			if mi:
+				mi.scale.x = -side  # thumbs point in toward the body on both hands
+				return g
 	match skin.gloves:
 		"boxing":
 			_part(g, Look.sphere(0.19), Look.toy(Color("d4202a"), 0.15))
@@ -473,7 +721,6 @@ func _glove(side: float) -> Node3D:
 			_part(g, gem, ice)
 		_:
 			_part(g, Look.sphere(0.16), Look.toy(color.darkened(0.1), 0.3))
-	g.position = Vector3(side * 0.55, 0.0, -0.15)
 	return g
 
 
@@ -481,6 +728,9 @@ func _shoe(side: float) -> Node3D:
 	var f := Node3D.new()
 	add_child(f)
 	var cols: Array = Skins.SHOES[skin.shoes]
+	if _painted and _model(f, "shoe_bowling", {ShoeA = cols[0], ShoeB = cols[1]}):
+		f.position = Vector3(side * 0.2, -0.78, 0)
+		return f
 	_part(f, Look.sphere(0.15), Look.toy(cols[0], 0.3), Vector3.ZERO, Vector3(1.0, 0.6, 1.45))
 	_part(f, Look.sphere(0.11), Look.toy(cols[1], 0.3), Vector3(0, 0.0, -0.11), Vector3(1.0, 0.62, 1.0))
 	_part(f, Look.box(Vector3(0.24, 0.04, 0.4)), Look.toy(Color("f4f1ea"), 0.6), Vector3(0, -0.075, 0))
@@ -582,6 +832,11 @@ func pose(dt: float, p: Dictionary) -> void:
 	var ms: Vector3 = {idle = Vector3.ONE, angry = Vector3(1.15, 0.45, 1), hurt = Vector3(0.6, 1.8, 1), woozy = Vector3(0.8, 0.6, 1),
 		happy = Vector3(1.25, 1.2, 1), ko = Vector3(0.9, 0.35, 1)}[mood]
 	_mouth.scale = _mouth.scale.lerp(ms, 0.35)
+	if _painted:
+		_body_mat.set_shader_parameter("mood", {idle = 0, angry = 1, hurt = 2, woozy = 3, happy = 4, ko = 5}[mood])
+		_body_mat.set_shader_parameter("blink", 1.0 if _blink < 0.0 else 0.0)
+		var rolling: bool = skin.eyes == "googly" or mood == "woozy"
+		_body_mat.set_shader_parameter("look", _googly / 0.035 if rolling else Vector2(sin(t * 0.7), cos(t * 0.53) * 0.5) * 0.35)
 	if _spinner:
 		_spinner.rotation.y += dt * (8.0 + p.get("speed", 0.0) * 4.0)
 	if _halo:

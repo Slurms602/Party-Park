@@ -113,9 +113,14 @@ get the scoring ones twice as often.
 - bounce light (SSIL), softer shadows, lacquered lanes and glossy vinyl bowlers;
 - a filmic finishing pass (contrast, split toning, vignette, lens fringing, grain) and soft depth of field;
 - light flashes, shockwave rings and spark streaks on big hits, and a golden explosion on strikes;
-- frosted-glass menu panels.
+- painted cartoon faces with expressions (angry wind-up, squeezed-shut eyes when hit, happy arcs, X eyes when
+  knocked out), blinking and glancing around;
+- modelled cosmetics made in Blender (`tools/blender/cosmetics.py`): every hat, the mitts, boxing and cartoon gloves,
+  and laced bowling shoes;
+- furnished maps with Kenney's CC0 props: an arcade corner, lounge, ball racks and a snack bar in Cosmic Lanes; a
+  rooftop bar, parasols, loungers and a real city skyline in Sunset Lanes.
 
-Off, the game looks exactly like the original Classic look. On first launch the game watches the menu for a few
+Off, the 3D looks exactly like the original Classic look (the menus are the same either way). On first launch the game watches the menu for a few
 seconds and switches itself to Classic if it runs under 35 fps.
 
 ### Levels, trophies and unlocks
@@ -146,7 +151,9 @@ game/
   scripts/relay_peer.gd MultiplayerPeer that tunnels through the relay over a WebSocket
   scripts/game.gd       match: host simulation, scoring, snapshots, client interpolation, camera
   scripts/beast.gd      the wobbly bowler: physics, fists, grab, bowl, knockout ball
-  scripts/bowler_model.gd  the bowler's look: bean body + outfit shader, face with expressions, hats, gloves, shoes
+  scripts/bowler_model.gd  the bowler's look: bean body + outfit/face shader, hats, gloves, shoes
+  scripts/dressing.gd   high-graphics set dressing: places the Kenney props
+  scripts/menu_art.gd   the menu's paper backdrop and the logo, drawn in code
   scripts/skins.gd      cosmetic catalog (slots, options, presets): add a cosmetic here + a builder in bowler_model
   scripts/ui.gd         UI kit (theme, bouncy buttons, panels); prefs.gd saved profile; music.gd music player
   scripts/arena.gd      alley geometry and shaders, pins, roll detection, re-racks (Cosmic Lanes)
@@ -156,7 +163,9 @@ game/
   scripts/bot.gd        bots (host-side; they send the same input as a human)
   scripts/hud.gd, scoreboard.gd, main.gd, sfx.gd (synthesized sounds), look.gd (materials, fonts)
   assets/music          menu, match, hurry and victory tracks, rendered by tools/make_music.py
-  assets/fonts          Lilita One + Fredoka (SIL Open Font License)
+  assets/fonts          Fraunces + Nunito (menus), Lilita One + Fredoka (in-world signs); all SIL Open Font License
+  assets/models         cosmetics.glb, built by tools/blender/cosmetics.py (Blender 4.5)
+  assets/props          Kenney kits (CC0, www.kenney.nl): arcade, city, furniture, nature
   tests/test_bowling.gd headless test of knockout → grab → bowl → score → re-rack
   tests/strike_rate.gd  bowls randomized human-ish throws on every map and compares strike rates
   tests/test_powerups.gd  item boxes and every power-up
@@ -174,6 +183,7 @@ godot --headless --path game -s tests/test_progress.gd                      # pr
 godot --headless --path game -- --host --bots=5 --autostart --timescale=3 --quit-after=30   # bot match, prints REPORT (--map=sunset)
 godot --path game -- --join=127.0.0.1 --name=Friend                         # second instance as a client
 python3 tools/make_music.py                                                 # re-render the music (numpy + oggenc)
+blender -b -P tools/blender/cosmetics.py -- "$PWD/game/assets/models/cosmetics.glb"  # rebuild the 3D cosmetics
 cd server && npm install && node relay.js                                   # run the relay locally (port 8080)
 godot --path game -- --relay=ws://127.0.0.1:8080 --host-online              # host through the local relay
 ```

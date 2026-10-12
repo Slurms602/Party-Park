@@ -16,6 +16,7 @@ void fragment() {
 	float r2 = dot(d, d);
 	vec2 off = d * r2 * 0.012;
 	vec3 c = vec3(texture(screen_tex, uv + off).r, texture(screen_tex, uv).g, texture(screen_tex, uv - off).b);
+	c = clamp(c, 0.0, 1.0);  // the S-curve below turns negative above 1.5 (the sun went black)
 	c = mix(c, c * c * (3.0 - 2.0 * c), 0.22);
 	float lum = dot(c, vec3(0.299, 0.587, 0.114));
 	c += shadows_tint * (1.0 - lum) + highlights_tint * lum;
