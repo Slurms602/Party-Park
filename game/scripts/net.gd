@@ -353,6 +353,32 @@ func party_roll_for(pid: int) -> void:
 		push_party()
 
 
+func party_use(i: int) -> void:
+	## This player uses the i-th item in their bag (before rolling).
+	if is_host():
+		party_use_for(my_id(), i)
+	elif is_online():
+		_use_request.rpc_id(1, i)
+
+
+func party_use_for(pid: int, i: int) -> void:
+	if is_host() and Party.use_item(party, pid, i):
+		push_party()
+
+
+func party_choose(to: int) -> void:
+	## This player picks a way at a fork.
+	if is_host():
+		party_choose_for(my_id(), to)
+	elif is_online():
+		_choose_request.rpc_id(1, to)
+
+
+func party_choose_for(pid: int, to: int) -> void:
+	if is_host() and Party.choose(party, pid, to):
+		push_party()
+
+
 func party_minigame_done(points: Dictionary) -> void:
 	if is_host():
 		Party.award(party, points)
@@ -374,6 +400,16 @@ func add_party_stats(row: Dictionary, feats: Dictionary) -> void:
 @rpc("any_peer", "reliable")
 func _roll_request() -> void:
 	party_roll_for(multiplayer.get_remote_sender_id())
+
+
+@rpc("any_peer", "reliable")
+func _use_request(i: int) -> void:
+	party_use_for(multiplayer.get_remote_sender_id(), i)
+
+
+@rpc("any_peer", "reliable")
+func _choose_request(to: int) -> void:
+	party_choose_for(multiplayer.get_remote_sender_id(), to)
 
 
 @rpc("authority", "call_local", "reliable")

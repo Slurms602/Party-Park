@@ -491,7 +491,7 @@ func _ev_end() -> void:
 		_banked = true
 		prog = Progress.finish_match(mine[0], top == Net.my_id() and mine[0].total > 0, feats)
 		Progress.fresh = prog.unlocks
-	hud.results(rows, p.color, p.skin, prog)
+	hud.results(rows, p.color, p.skin, arena.stats, prog)
 	Music.play("victory", 0.2)
 
 
@@ -507,7 +507,7 @@ func _process(dt: float) -> void:
 		if full and not _dinged:
 			Sfx.play_ui("ding", -4.0)  # fully charged
 		_dinged = full
-		hud.set_me(me.display_name, me.color, me.health, me.state >= Beast.BALL, maxf(me.ko_time, 0.0))
+		hud.set_me(me.display_name, me.color, me.health if arena.damage > 0.0 else -1.0, me.state >= Beast.BALL, maxf(me.ko_time, 0.0))
 		if me.item != "" and me.state < Beast.BALL:
 			var k: Dictionary = Powerups.KINDS[me.item]
 			var left := "%d swings" % me.item_uses if me.item == "giant_pin" else "%ds" % ceili(me.item_t)
@@ -554,18 +554,7 @@ func _prompts(me: Beast) -> Array:
 		return [["MASH", "ANY BUTTON TO WAKE UP"]]
 	if me.out:
 		return [["!", "YOU'RE OUT. CHEER THEM ON!"]]
-	if me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED):
-		return arena.carry_prompts(me)
-	for b: Beast in beasts.values():
-		if b != me and b.state == Beast.BALL and b.global_position.distance_to(me.global_position) < 2.8:
-			return [["HOLD RMB", "GRAB THEM"]]
-	if me.item == "ball":
-		return [["LMB", "THROW THE BALL"], ["HOLD LMB", "THROW HARDER"]]
-	if me.item == "giant_pin":
-		return [["LMB", "BONK"]]
-	if _match_t < 15.0:
-		return [["LMB", "PUNCH"], ["HOLD LMB", "HAYMAKER"], ["RMB", "GRAB"], ["SHIFT", "DIVE"]]
-	return []
+	return arena.prompts(me, _match_t < 15.0)
 
 
 func _box_marks() -> Array:
@@ -589,7 +578,9 @@ func _touchify(items: Array) -> Array:
 	## Same prompts, phrased for the on-screen buttons.
 	if not _touch:
 		return items
-	var names := {"LMB": "PUNCH", "HOLD LMB": "HOLD PUNCH", "RMB": "TAP GRAB", "HOLD RMB": "TAP GRAB", "SHIFT": "DIVE", "RELEASE": "LET GO"}
+	var p := arena.punch_word
+	var names := {"LMB": p, "HOLD LMB": "HOLD " + p, "MASH LMB": "MASH " + p, "RMB": "TAP GRAB", "HOLD RMB": "TAP GRAB",
+		"SHIFT": arena.dive_word, "RELEASE": "LET GO"}
 	return items.map(func(it): return [names.get(it[0], it[0])] + it.slice(1))
 
 

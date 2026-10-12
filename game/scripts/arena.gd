@@ -10,6 +10,10 @@ var cam_look := Vector3(0, -6.5, -14.0)  # game camera direction
 var cam_focus := Vector3.ZERO  # what the camera watches when you're out
 var go_word := "Go!"  # the end of the 3, 2, 1 countdown
 var throw_word := "THROW"  # the touch PUNCH button while carrying someone
+var punch_word := "PUNCH"  # the touch PUNCH button the rest of the time
+var dive_word := "DIVE"  # the touch DIVE button
+var damage := 1.0  # how much hits hurt; 0: nobody is ever knocked out, hits only push (a pushing game)
+var stats := [["KO", "kos"]]  # extra results columns: [heading, key in the match's scores]
 var show_frames := false  # the HUD scoreboard shows bowling frames
 var screen_board: Control  # an in-world scoreboard (Scoreboard) the match keeps up to date, if the field has one
 var pins: Array[RigidBody3D] = []  # props a thrown bowling ball flies through instead of knocking over
@@ -47,11 +51,6 @@ func setup(is_server: bool) -> void:
 func spawn_point(i: int) -> Vector3:
 	var a := TAU * (i % 8) / 8.0 + PI * 0.5
 	return Vector3(cos(a) * 4.8, 1.2, sin(a) * 4.8)
-
-
-func safe_radius() -> float:
-	## How far from the middle a bot can wander before it's in danger (only fields with an edge to fall off).
-	return INF
 
 
 func item_spots() -> Array:
@@ -98,6 +97,28 @@ func follow(_ball: Beast) -> bool:
 	return false
 
 
+func buttons(_b: Beast, _inp: Dictionary, _dt: float) -> bool:
+	## Host, every tick a player is on their feet: return true to handle the punch and grab buttons here instead of
+	## the brawl's (punch, grab, carry, throw). Move, jump and dive stay the match's.
+	return false
+
+
+func prompts(me: Beast, tips: bool) -> Array:
+	## Button prompts for the local player while they're on their feet. tips: the match has just started.
+	if me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED):
+		return carry_prompts(me)
+	for b: Beast in game.beasts.values():
+		if b != me and b.state == Beast.BALL and b.global_position.distance_to(me.global_position) < 2.8:
+			return [["HOLD RMB", "GRAB THEM"]]
+	if me.item == "ball":
+		return [["LMB", "THROW THE BALL"], ["HOLD LMB", "THROW HARDER"]]
+	if me.item == "giant_pin":
+		return [["LMB", "BONK"]]
+	if tips:
+		return [["LMB", "PUNCH"], ["HOLD LMB", "HAYMAKER"], ["RMB", "GRAB"], ["SHIFT", "DIVE"]]
+	return []
+
+
 func carry_prompts(_me: Beast) -> Array:
 	## Button prompts while you carry someone.
 	return [["HOLD LMB", "WIND UP"], ["RELEASE", "THROW!"]]
@@ -110,6 +131,11 @@ func bot_carry(_b: Beast, m: Dictionary, inp: Dictionary, dt: float) -> Dictiona
 	if not inp.punch:
 		m.wind = -1.0
 	return inp
+
+
+func bot_think(_b: Beast, _dt: float) -> Dictionary:
+	## Host: a bot's whole input ({move, jump, punch, grab, dive}), or {} to play the usual brawler (the hooks below).
+	return {}
 
 
 func bot_home(t: float) -> Vector3:

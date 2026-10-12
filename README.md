@@ -84,13 +84,24 @@ offer to download the export templates the first time.
 
 ### Party mode
 
-A Mario Party-style board game. Everyone **rolls at the same time** (dice 1–10) and hops around the island's loop of
-24 spaces: blue +3 coins, red −3, green "?" a lucky bonus. Pass the **star** with 20 coins and you buy it, then it
-moves. After every round a random **sports minigame** pays coins by finishing place (10, 7, 5, 3, 2, 1...).
-After 5, 8 or 12 rounds, most stars wins (coins break ties). A whole party counts as one match for XP and trophies.
+A Mario Party-style board game on **Party Park**, an amusement park island. Everyone **rolls at the same time**
+(dice 1–10) and hops along a path that winds past the rides. At two **forks** you pick a way: the plaza shortcut or
+the long way past the sumo dojo, the main path or the lakeside walk.
+
+- Spaces: blue +3 coins, red −3, green "?" lucky, yellow items, purple seagulls (they steal coins or an item), the
+  **ticket booth** (passing pays 3 coins in, landing wins the lot) and orange **landmark events**: ride the **roller
+  coaster** across the park, spin the **prize wheel**, bowl over everyone near the **bowling alley**, or take on
+  whoever's closest in a **sumo duel**.
+- Items (carry two, use before rolling): **Double Dice**, **Swap Ticket** (trade places), **Coin Magnet** (5 coins from
+  the richest), **Golden Ticket** (warp to the star).
+- Reach the **star** with 20 coins and you buy it, then it moves. After every round a random **sports minigame** pays
+  coins by finishing place (10, 7, 5, 3, 2, 1...).
+- After 5, 8 or 12 rounds come the **bonus stars** (most minigame coins, most coins at once, most event spaces), then
+  most stars wins (coins break ties). A whole party counts as one match for XP and trophies.
 
 Minigames so far: **Cosmic Bowling** and **Sunset Bowling** (75-second versions of the main game) and **Sumo Ring**
-(knock everyone off a floating ring; everyone still standing scores when someone goes over, last one standing +3).
+(no punches: grab belts, shove and charge everyone off a floating ring; everyone still in scores when someone goes
+over, the pusher scores again, last one standing +3).
 **Quick match** plays a single game on the map you pick, as before.
 
 ### Maps
@@ -179,7 +190,7 @@ game/
     bowler_model.gd     the bowler's look: bean body + outfit/face shader, hats, gloves, shoes
     net.gd              lobby, hosting/joining by room code, LAN discovery, direct IP, party state (autoload)
     relay_peer.gd       MultiplayerPeer that tunnels through the relay over a WebSocket
-    party.gd, board.gd  party rules (rolls, moves, coins, the star, payouts) and the board itself
+    party.gd, board.gd  party rules and map (moves, forks, items, events, the star, payouts) and the park itself
     powerups.gd         item boxes, the power-up table, thrown bowling balls
     progress.gd         XP, levels, achievements and which cosmetics they unlock
     bot.gd              bots (host-side; they send the same input as a human)

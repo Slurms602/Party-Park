@@ -7,7 +7,7 @@ extends MultiplayerPeerExtension
 signal hosted(code: String)
 signal failed(message: String)
 
-const PROTOCOL := "6"  # bump when the network format changes; the relay refuses mismatched versions
+const PROTOCOL := "7"  # bump when the network format changes; the relay refuses mismatched versions
 const MAX_BACKLOG := 48 * 1024
 
 var code := ""

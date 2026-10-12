@@ -207,6 +207,8 @@ func _sim_stand(inp: Dictionary, dt: float) -> void:
 	if _pressed(inp, "dive") and cooldown.dive <= 0.0 and not holding is Beast:
 		_start_dive()
 		return
+	if arena.buttons(self, inp, dt):
+		return
 
 	# Grab: hold to keep hold of whatever is in front of you (Gang Beasts style).
 	reaching = inp.get("grab", false) and holding == null
@@ -380,7 +382,7 @@ func take_hit(by: int, dir: Vector3, dmg: float, force: float, lift := 0.25, dow
 	if immune > 0.0:
 		apply_central_impulse(dir * force * 0.3 * mass)
 		return
-	health -= dmg
+	health -= dmg * arena.damage
 	since_hit = 0.0
 	last_hit_by = by
 	# Replace most of the current motion so every hit reads clearly, then add a whiplash spin.

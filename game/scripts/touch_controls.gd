@@ -30,7 +30,7 @@ func _ready() -> void:
 	_pad.draw.connect(_draw_pad)
 	add_child(_pad)
 	for b in BUTTONS:
-		_buttons.append(_button(b[0], b[1], b[3], b[4]))
+		_buttons.append(_button(b[0] if b[1] != "dive" or arena == null else arena.dive_word, b[1], b[3], b[4]))
 	var grab := _buttons[1]
 	grab.action = ""  # handled as a toggle below
 	grab.pressed.connect(func(): _set_grab(not _grab_on))
@@ -111,7 +111,7 @@ func _contextual(me: Beast) -> void:
 		return
 	var carrying: bool = me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED)
 	var punch_label: Label = _buttons[0].get_child(0)
-	punch_label.text = (arena.throw_word if arena else "THROW") if carrying else {ball = "THROW", giant_pin = "BONK"}.get(me.item, "PUNCH")
+	punch_label.text = (arena.throw_word if arena else "THROW") if carrying else {ball = "THROW", giant_pin = "BONK"}.get(me.item, arena.punch_word if arena else "PUNCH")
 	if _grab_on:
 		return
 	var near := false

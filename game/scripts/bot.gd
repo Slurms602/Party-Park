@@ -3,14 +3,8 @@ class_name Bot
 
 
 static func think(b: Beast, arena: Arena, dt: float) -> Dictionary:
-	var inp := _think(b, arena, dt)
-	# Fields with an edge (Sumo Ring): don't run or dive off it, unless we're about to throw someone over.
-	var r := Vector2(b.global_position.x, b.global_position.z)
-	var carrying: bool = b.holding is Beast and b.holding.state == Beast.CARRIED
-	if r.length() > arena.safe_radius() and not carrying:
-		inp.move = (inp.move * 0.3 - r.normalized()).limit_length(1.0)
-		inp.dive = false
-	return inp
+	var own := arena.bot_think(b, dt)  # a minigame with its own way of playing
+	return own if not own.is_empty() else _think(b, arena, dt)
 
 
 static func _think(b: Beast, arena: Arena, dt: float) -> Dictionary:

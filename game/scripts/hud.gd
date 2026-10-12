@@ -263,10 +263,11 @@ func set_time(t: float) -> void:
 func set_me(player_name: String, col: Color, health: float, balled: bool, ko_left: float) -> void:
 	_me_name.text = player_name
 	_card_style.border_color = col
+	_health.visible = health >= 0.0  # -1: this minigame has no health (nobody gets knocked out)
 	_health.value = health
 	var fill: StyleBoxFlat = _health.get_theme_stylebox("fill")
 	fill.bg_color = UI.RED if health < 25 else (UI.MUSTARD if health < 55 else UI.TEAL)
-	_status.text = "Knocked out  ·  %.1fs" % ko_left if balled else ("Woozy!" if health < 25 else "Ready to brawl")
+	_status.text = "Knocked out  ·  %.1fs" % ko_left if balled else ("Woozy!" if health >= 0.0 and health < 25 else "Ready to brawl")
 	_status.add_theme_color_override("font_color", Color(UI.NAVY, 0.7))
 
 
@@ -410,7 +411,8 @@ func impact() -> void:
 
 # ------------------------------------------------------------------ results
 
-func results(rows: Array, winner_color: Color, winner_skin: Dictionary, prog := {}) -> void:
+func results(rows: Array, winner_color: Color, winner_skin: Dictionary, stats: Array, prog := {}) -> void:
+	## stats: the minigame's extra columns, [heading, row key] (Arena.stats).
 	_pause.visible = false
 	_results = Control.new()
 	_results.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -464,15 +466,15 @@ func results(rows: Array, winner_color: Color, winner_skin: Dictionary, prog := 
 	UI.label(v, "Winner!", 46, UI.RED, true)
 	UI.label(v, winner.name, 88, UI.NAVY, true)
 	var table := GridContainer.new()
-	table.columns = 6
+	table.columns = 3 + stats.size()
 	table.add_theme_constant_override("h_separation", 28)
 	table.add_theme_constant_override("v_separation", 4)
 	v.add_child(table)
-	for head in ["#", "Bowler", "Pts", "X", "/", "KO"]:
+	for head in ["#", "Player", "Pts"] + stats.map(func(c): return c[0]):
 		UI.label(table, head, 18, Color(UI.NAVY, 0.55), true)
 	for i in rows.size():
 		var r: Dictionary = rows[i]
-		var cells := [str(i + 1), r.name, str(r.total), str(r.get("strikes", 0)), str(r.get("spares", 0)), str(r.get("kos", 0))]
+		var cells := [str(i + 1), r.name, str(r.total)] + stats.map(func(c): return str(r.get(c[1], 0)))
 		for c in cells.size():
 			UI.label(table, cells[c], 28, UI.ink(r.color) if c == 1 else UI.NAVY, true)
 	if not prog.is_empty():

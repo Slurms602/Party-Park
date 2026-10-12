@@ -31,7 +31,9 @@ its own: it needs this repo around it.
    menu pick it up with no core edits.
 2. The arena script `extends Arena` and builds its world in `setup()`. Override only the hooks your game needs. They're
    all listed with their defaults in `game/scripts/arena.gd`: spawns, items, `server_update` (your rules), snapshots,
-   prompts, throws, camera and bot behaviour. `sumo_ring.gd` is the small example; `bowling_arena.gd` the full one.
+   prompts, throws, camera and bot behaviour. A game that isn't a brawl can take over the punch and grab buttons
+   (`buttons`), the bots (`bot_think`) and set `damage = 0` (no knockouts). `sumo_ring.gd` does all three (grappling
+   and shoving); `bowling_arena.gd` is the full brawl. Say "player", not "bowler", in anything a non-bowling game shows.
 3. Rules run on the host in `server_update`, through `game`: `game.scores[pid].total += n` then `game.push_scores()`,
    `game.feed(...)` for the kill feed, `game.end_match()` to finish early. Effects that everyone sees go through your
    own `@rpc` methods sent with `game.send(_my_rpc, [args])` (the arena node is named `Arena` on every peer).
