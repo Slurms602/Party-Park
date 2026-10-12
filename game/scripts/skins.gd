@@ -2,25 +2,28 @@ class_name Skins
 ## Cosmetic catalog. A skin is a small Dictionary of slot -> option id, so it syncs over the network and saves
 ## to disk as-is. Adding a new cosmetic = one entry here plus its builder in BowlerModel.
 ## Slots follow Super Battle Golf's loadout layout (hat / upper face / lower face / body / shoes / gloves).
+## New options go at the end of their list (the outfit's index is its shader pattern). Progress decides what's locked.
 
 const SLOTS := {
-	hat = ["none", "cap", "beanie", "tophat", "cone", "viking", "afro", "mohawk", "propeller", "pin", "party", "headband", "halo"],
-	eyes = ["round", "sleepy", "angry", "googly", "cyclops", "shades", "nerd", "visor"],
-	mouth = ["grin", "smile", "teeth", "mustache", "tongue", "beard"],
-	outfit = ["plain", "bowling", "stripes", "polka", "flames", "tux", "hawaiian", "checker", "zigzag", "galaxy"],
-	gloves = ["mitts", "boxing", "cartoon", "gold"],
-	shoes = ["classic", "retro", "neon", "tux", "gold"],
-	accent = ["red", "blue", "yellow", "green", "purple", "orange", "pink", "teal", "white", "black"],
+	hat = ["none", "cap", "beanie", "tophat", "cone", "viking", "afro", "mohawk", "propeller", "pin", "party", "headband", "halo",
+		"cowboy", "chef", "bunny", "wizard", "crown", "golden_pin", "dunce"],
+	eyes = ["round", "sleepy", "angry", "googly", "cyclops", "shades", "nerd", "visor", "laser", "sparkle"],
+	mouth = ["grin", "smile", "teeth", "mustache", "tongue", "beard", "fangs", "kiss"],
+	outfit = ["plain", "bowling", "stripes", "polka", "flames", "tux", "hawaiian", "checker", "zigzag", "galaxy", "tiger", "lava", "gold", "rainbow"],
+	gloves = ["mitts", "boxing", "cartoon", "gold", "lava", "diamond"],
+	shoes = ["classic", "retro", "neon", "tux", "gold", "flame", "ice", "candy"],
+	accent = ["red", "blue", "yellow", "green", "purple", "orange", "pink", "teal", "white", "black", "gold"],
 }
 
 const LABELS := {hat = "Hat", eyes = "Eyes", mouth = "Mouth", outfit = "Outfit", gloves = "Gloves", shoes = "Shoes", accent = "Accent"}
 
 const ACCENTS := {red = Color("e8323c"), blue = Color("2f6bff"), yellow = Color("ffd23f"), green = Color("2ecc71"),
 	purple = Color("9b59ff"), orange = Color("ff8c2a"), pink = Color("ff5fb4"), teal = Color("1fd1c1"),
-	white = Color("f4f1ea"), black = Color("1c1626")}
+	white = Color("f4f1ea"), black = Color("1c1626"), gold = Color("ffc21a")}
 
 const SHOES := {classic = [Color("d93a3a"), Color("2a4fd9")], retro = [Color("efe2c4"), Color("7a4a2a")],
-	neon = [Color("39ff88"), Color("ff3fb4")], tux = [Color("16121c"), Color("f4f1ea")], gold = [Color("ffcc33"), Color("b8860b")]}
+	neon = [Color("39ff88"), Color("ff3fb4")], tux = [Color("16121c"), Color("f4f1ea")], gold = [Color("ffcc33"), Color("b8860b")],
+	flame = [Color("ff5a1a"), Color("ffd23f")], ice = [Color("e8fbff"), Color("4fd6ff")], candy = [Color("ff7ac8"), Color("7af0ff")]}
 
 ## Named presets: a starting point for players, and the look of the bots.
 const PRESETS := {
@@ -40,9 +43,10 @@ static func default_skin() -> Dictionary:
 
 
 static func random_skin() -> Dictionary:
+	## A random look from what you've unlocked.
 	var s := {}
 	for slot in SLOTS:
-		s[slot] = SLOTS[slot].pick_random()
+		s[slot] = SLOTS[slot].filter(func(id): return Progress.lock_reason(slot, id) == "").pick_random()
 	return s
 
 
@@ -54,11 +58,6 @@ static func sanitize(s) -> Dictionary:
 			if s.get(slot) in SLOTS[slot]:
 				out[slot] = s[slot]
 	return out
-
-
-static func cycle(s: Dictionary, slot: String, step: int) -> void:
-	var opts: Array = SLOTS[slot]
-	s[slot] = opts[(opts.find(s[slot]) + step + opts.size()) % opts.size()]
 
 
 static func pretty(id: String) -> String:

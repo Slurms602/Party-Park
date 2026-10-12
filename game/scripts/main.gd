@@ -19,6 +19,10 @@ var _preview: BowlerModel
 var _preview_holder: Control
 var _slot_labels := {}
 var _preset := 0
+var _browse := {}  # slot -> a locked option being previewed (never saved to your skin)
+var _lock_hint: Label
+var _level_label: Label
+var _trophies: VBoxContainer
 var _args := {}
 var _logo_node: Control
 var _code: LineEdit
@@ -140,6 +144,7 @@ func _build_ui() -> void:
 	UI.button(main, "HOST GAME", _host_online)
 	UI.button(main, "JOIN GAME", func(): _show("join"))
 	UI.button(main, "CUSTOMIZE", func(): _show("customize"))
+	UI.button(main, "TROPHIES", func(): _show("trophies"))
 	UI.button(main, "SETTINGS", func(): _show("settings"))
 	UI.button(main, "QUIT", func(): get_tree().quit())
 
@@ -182,6 +187,7 @@ func _build_ui() -> void:
 
 	_build_customize(stack)
 	_build_settings(stack)
+	_trophies = _screen(stack, "trophies", "TROPHIES")
 
 	var lobby := _screen(stack, "lobby", "LOBBY")
 	_room_card = PanelContainer.new()
@@ -297,6 +303,11 @@ func _show(id: String) -> void:
 	_logo_node.visible = id in ["main", "join"]  # sub-screens need the room
 	if id == "lobby":
 		_refresh_lobby()
+	if id == "customize":
+		_browse.clear()
+		_saved(true, false)
+	if id == "trophies":
+		_refresh_trophies()
 
 
 func _build_customize(stack: Control) -> void:
@@ -310,9 +321,11 @@ func _build_customize(stack: Control) -> void:
 		Prefs.player_name = t.strip_edges() if t.strip_edges() != "" else "Bowler"
 		_saved(false))
 	v.add_child(_name)
+	_level_label = UI.label(v, "", 20, UI.YELLOW, true)
 	_slot_row(v, "preset", "Look")
 	for slot in Skins.SLOTS:
 		_slot_row(v, slot, Skins.LABELS[slot])
+	_lock_hint = UI.label(v, "", 19, Color(1, 1, 1, 0.8))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	v.add_child(row)
@@ -375,6 +388,45 @@ func _build_customize(stack: Control) -> void:
 	_refresh_slots()
 
 
+func _refresh_trophies() -> void:
+	## Level, the next level reward, and every achievement with what it unlocks.
+	for c in _trophies.get_children().slice(1):  # keep the panel title
+		c.queue_free()
+	var info := Progress.level_info(Prefs.xp)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 14)
+	_trophies.add_child(top)
+	UI.label(top, "LEVEL %d" % info.level, 30, UI.YELLOW, true)
+	var bar := UI.bar(top, UI.YELLOW, 260, 20)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.value = 100.0 * info.into / info.need
+	UI.label(top, "%d / %d XP" % [info.into, info.need], 18, Color(1, 1, 1, 0.75))
+	for lvl in Progress.LEVEL_REWARDS:
+		if lvl > info.level:
+			UI.label(_trophies, "Level %d unlocks: %s" % [lvl, Progress.reward_name(Progress.LEVEL_REWARDS[lvl])], 19, UI.PINK)
+			break
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(540, 330)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_trophies.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 6)
+	scroll.add_child(list)
+	var done := 0
+	for id: String in Progress.ACHIEVEMENTS:
+		var a: Dictionary = Progress.ACHIEVEMENTS[id]
+		var have: bool = Prefs.achievements.has(id)
+		done += int(have)
+		var row := HBoxContainer.new()
+		list.add_child(row)
+		var name := UI.label(row, ("DONE  " if have else "") + a.name, 22, UI.YELLOW if have else Color.WHITE, true)
+		name.custom_minimum_size.x = 250
+		UI.label(row, Progress.reward_name(a.reward) if a.has("reward") else "+%d XP" % (a.xp + Progress.ACHIEVEMENT_XP), 18, UI.PINK)
+		UI.label(list, "      " + a.desc, 17, Color(1, 1, 1, 0.6 if have else 0.8))
+	UI.label(_trophies, "%d / %d achievements" % [done, Progress.ACHIEVEMENTS.size()], 18, UI.CYAN)
+	UI.button(_trophies, "BACK", func(): _show("main"), 200)
+
+
 func _slot_row(parent: Node, slot: String, title: String) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
@@ -394,16 +446,23 @@ func _cycle(slot: String, step: int) -> void:
 		_preset = (_preset + step + Skins.PRESETS.size()) % Skins.PRESETS.size()
 		Prefs.skin = Skins.PRESETS.values()[_preset].duplicate()
 	else:
-		Skins.cycle(Prefs.skin, slot, step)
+		var opts: Array = Skins.SLOTS[slot]
+		var next: String = opts[(opts.find(_browse.get(slot, Prefs.skin[slot])) + step + opts.size()) % opts.size()]
+		_browse.clear()
+		if Progress.lock_reason(slot, next) == "":
+			Prefs.skin[slot] = next
+		else:
+			_browse[slot] = next  # try it on in the preview; your saved look stays as it was
 	_saved()
 
 
-func _saved(rebuild := true) -> void:
+func _saved(rebuild := true, hop := true) -> void:
 	Prefs.save()
 	Net.update_me()
 	if rebuild:
-		_preview.build(_my_color(), Prefs.skin)
-		_preview.hit(Vector3.FORWARD, 0.4)  # a little hop on every change
+		_preview.build(_my_color(), Prefs.skin.merged(_browse, true))
+		if hop:
+			_preview.hit(Vector3.FORWARD, 0.4)  # a little hop on every change
 	_refresh_slots()
 
 
@@ -413,7 +472,11 @@ func _refresh_slots() -> void:
 			var i := Skins.PRESETS.values().find(Prefs.skin)
 			_slot_labels[slot].text = Skins.PRESETS.keys()[i] if i >= 0 else "Custom"
 		else:
-			_slot_labels[slot].text = Skins.pretty(Prefs.skin[slot])
+			_slot_labels[slot].text = Skins.pretty(_browse.get(slot, Prefs.skin[slot])) + ("  (LOCKED)" if _browse.has(slot) else "")
+			_slot_labels[slot].add_theme_color_override("font_color", Color(1, 1, 1, 0.45) if _browse.has(slot) else Color.WHITE)
+	var info := Progress.level_info(Prefs.xp)
+	_level_label.text = "LEVEL %d  ·  %d / %d XP" % [info.level, info.into, info.need]
+	_lock_hint.text = "" if _browse.is_empty() else "LOCKED: " + Progress.lock_reason(_browse.keys()[0], _browse.values()[0])
 
 
 func _my_color() -> Color:
@@ -640,6 +703,25 @@ func _on_match_ended() -> void:
 	_ui.visible = true
 	Music.play("menu")
 	_show("lobby" if Net.is_online() else "main")
+	if not Progress.fresh.is_empty():
+		_toast("NEW UNLOCKS: %s. Try them on in CUSTOMIZE!" % ", ".join(Progress.fresh.map(func(r): return Progress.reward_name(r))))
+		Progress.fresh = []
+
+
+func _toast(text: String) -> void:
+	## A note that pops up at the bottom of the screen for a few seconds.
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", UI.box(Color(0.06, 0.03, 0.14, 0.95), UI.YELLOW, 6, 16))
+	UI.label(p, text, 24, UI.YELLOW, true)
+	_ui.add_child(p)
+	p.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 40)
+	p.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	p.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	UI.pop_in.call_deferred(p)
+	var tw := p.create_tween()
+	tw.tween_interval(8.0)
+	tw.tween_property(p, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(p.queue_free)
 
 
 # ================================================================= test hooks

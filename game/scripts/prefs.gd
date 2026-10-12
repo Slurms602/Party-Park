@@ -1,5 +1,5 @@
 extends Node
-## Saved player profile and settings (autoload "Prefs"): name, skin, volumes, fullscreen.
+## Saved player profile and settings (autoload "Prefs"): name, skin, volumes, fullscreen, and progress (see Progress).
 
 const PATH := "user://profile.cfg"
 
@@ -9,6 +9,9 @@ var music := 0.7
 var sfx := 0.9
 var fullscreen := false
 var relay := ""  # custom online server URL; empty = Net.DEFAULT_RELAY
+var xp := 0
+var stats := {}  # lifetime totals: matches, wins, pins
+var achievements: Array = []  # Progress.ACHIEVEMENTS ids
 
 
 func _ready() -> void:
@@ -24,6 +27,9 @@ func _ready() -> void:
 	sfx = cfg.get_value("audio", "sfx", sfx)
 	fullscreen = cfg.get_value("video", "fullscreen", fullscreen)
 	relay = cfg.get_value("online", "relay", relay)
+	xp = cfg.get_value("progress", "xp", xp)
+	stats = cfg.get_value("progress", "stats", stats)
+	achievements = cfg.get_value("progress", "achievements", achievements)
 	apply()
 
 
@@ -42,4 +48,7 @@ func save() -> void:
 	cfg.set_value("audio", "sfx", sfx)
 	cfg.set_value("video", "fullscreen", fullscreen)
 	cfg.set_value("online", "relay", relay)
+	cfg.set_value("progress", "xp", xp)
+	cfg.set_value("progress", "stats", stats)
+	cfg.set_value("progress", "achievements", achievements)
 	cfg.save(PATH)

@@ -5,6 +5,7 @@ extends Node3D
 ## Boxes sit where you bowl from, so the fight stays away from the pins.
 
 signal picked(b: Beast, kind: String)
+signal ball_hit(by: int, victim: Beast)
 
 const RESPAWN := 8.0
 const BALL_R := 0.3
@@ -165,6 +166,7 @@ func _on_ball_hit(other: Node, p: Dictionary) -> void:
 	var k := clampf((rel - 4.0) / 12.0, 0.0, 1.0)
 	var dir := (rb.linear_velocity * Vector3(1, 0, 1)).normalized()
 	b.take_hit(p.by, dir, lerpf(30.0, 55.0, k), lerpf(8.0, 15.0, k), 0.5, lerpf(0.6, 1.3, k), "CLONK!" if k > 0.5 else "")
+	ball_hit.emit(p.by, b)
 	b.fx.emit("smack", (rb.global_position + b.global_position) * 0.5, 2.0)
 
 

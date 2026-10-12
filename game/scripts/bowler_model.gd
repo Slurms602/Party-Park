@@ -17,6 +17,7 @@ void fragment() {
 	float fu = fract(u - 0.25) - 0.5;  // 0 = middle of the front
 	vec3 col = base;
 	vec3 em = vec3(0.0);
+	float metal = 0.0;
 	float shirt = 1.0 - smoothstep(0.54, 0.56, v);  // clothes cover the lower body
 	if (pattern == 0) {  // plain: lighter belly
 		float b = length(vec2(fu * 3.2, (v - 0.33) * 2.3));
@@ -64,8 +65,28 @@ void fragment() {
 		float star = step(0.96, h(floor(sg))) * smoothstep(0.35, 0.1, length(fract(sg) - 0.5));
 		col = mix(col, s + vec3(star), shirt);
 		em = vec3(star) * shirt * 2.5;
+	} else if (pattern == 10) {  // tiger stripes
+		float s = sin(u * 50.0 + sin(v * 23.0) * 1.8 + sin(v * 7.0));
+		col = mix(col, mix(vec3(1.0, 0.55, 0.1), vec3(0.06, 0.03, 0.03), step(0.55, s)), shirt);
+	} else if (pattern == 11) {  // lava: cooled rock with glowing cracks
+		float c = abs(sin(u * 31.0 + sin(v * 17.0) * 2.0) * sin(v * 23.0 + sin(u * 13.0) * 3.0));
+		float crack = smoothstep(0.12, 0.0, c);
+		vec3 hot = mix(vec3(1.0, 0.35, 0.05), vec3(1.0, 0.85, 0.2), crack);
+		col = mix(col, mix(vec3(0.13, 0.07, 0.07), hot, crack), shirt);
+		em = hot * crack * shirt * 2.0;
+	} else if (pattern == 12) {  // solid gold suit with glints
+		vec2 sg = vec2(u * 80.0, v * 40.0);
+		float glint = step(0.97, h(floor(sg))) * smoothstep(0.4, 0.1, length(fract(sg) - 0.5));
+		col = mix(col, vec3(1.0, 0.76, 0.2) * (0.85 + 0.15 * sin(v * 30.0)) + vec3(glint), shirt);
+		em = (vec3(1.0, 0.9, 0.5) * glint * 2.0 + vec3(0.25, 0.16, 0.0)) * shirt;  // a warm glow reads as gold without reflections
+		metal = shirt * 0.3;
+	} else if (pattern == 13) {  // rainbow bands
+		vec3 rb = 0.55 + 0.45 * cos(6.2832 * (v * 2.2 + u * 0.3 + vec3(0.0, 0.33, 0.67)));
+		col = mix(col, rb, shirt);
+		em = rb * shirt * 0.15;
 	}
 	ALBEDO = col;
+	METALLIC = metal;
 	ROUGHNESS = 0.32;
 	RIM = 0.5;
 	RIM_TINT = 0.3;
@@ -244,6 +265,12 @@ func _build_eyes(accent: Color) -> void:
 			_part(_upper, Look.box(Vector3(0.56, 0.12, 0.08)), Look.neon(accent.lightened(0.2), 2.5), Vector3(0, 0.39, -0.4))
 			for p in _pupils:
 				p.visible = false
+		"laser", "sparkle":
+			var glow := Look.neon(Color("ff2030") if kind == "laser" else Color("ffd23f"), 3.0)
+			for p in _pupils:
+				p.material_override = glow
+				if kind == "sparkle":
+					_part(p, Look.sphere(0.02), Look.neon(Color.WHITE, 4.0), Vector3(0.025, 0.03, -0.03))
 
 
 func _build_mouth(accent: Color) -> void:
@@ -277,6 +304,17 @@ func _build_mouth(accent: Color) -> void:
 				_part(_mouth, Look.sphere(0.07), hair, Vector3(s * 0.08, 0.035, -0.02), Vector3(1.5, 0.6, 0.7), Vector3(0, 0, s * 0.35))
 			if kind == "beard":
 				_part(_upper, Look.sphere(0.25), hair, Vector3(0, 0.02, -0.3), Vector3(1.15, 0.8, 0.6))
+		"fangs":
+			_part(_mouth, open, black, Vector3.ZERO, Vector3(1.3, 1, 0.5), Vector3(PI, 0, 0))
+			var fang := PrismMesh.new()
+			fang.size = Vector3(0.05, 0.08, 0.03)
+			for s in [-1.0, 1.0]:
+				_part(_mouth, fang, white, Vector3(s * 0.06, -0.035, -0.035), Vector3.ONE, Vector3(0, 0, PI))
+		"kiss":
+			var lips := TorusMesh.new()
+			lips.inner_radius = 0.025
+			lips.outer_radius = 0.06
+			_part(_mouth, lips, Look.toy(Color("ff2d6f"), 0.2), Vector3(0, 0, -0.02), Vector3(1.2, 1, 1), Vector3(PI * 0.5, 0, 0))
 
 
 func _build_hat(accent: Color) -> void:
@@ -347,6 +385,56 @@ func _build_hat(accent: Color) -> void:
 			ring.inner_radius = 0.22
 			ring.outer_radius = 0.27
 			_halo = _part(_upper, ring, Look.neon(Color("ffe680"), 2.5), Vector3(0, 1.0, 0))
+		"cowboy":
+			var leather := Look.toy(Color("8a5a32"), 0.6)
+			_part(_upper, _cyl(0.56, 0.56, 0.035), leather, Vector3(0, 0.68, 0), Vector3(1, 1, 0.85))
+			for s in [-1.0, 1.0]:  # brim curled up at the sides
+				_part(_upper, _cyl(0.2, 0.2, 0.03), leather, Vector3(s * 0.46, 0.75, 0), Vector3(0.5, 1, 1.6), Vector3(0, 0, s * 0.7))
+			_part(_upper, _cyl(0.26, 0.29, 0.3), leather, Vector3(0, 0.85, 0))
+			_part(_upper, _cyl(0.292, 0.292, 0.06), dark, Vector3(0, 0.74, 0))
+		"chef":
+			var white := Look.toy(Color("fbfaf6"), 0.7)
+			_part(_upper, _cyl(0.3, 0.3, 0.2), white, Vector3(0, 0.72, 0))
+			for i in 5:
+				var a := TAU * i / 5.0
+				_part(_upper, Look.sphere(0.17), white, Vector3(cos(a) * 0.17, 0.92, sin(a) * 0.17))
+			_part(_upper, Look.sphere(0.19), white, Vector3(0, 1.0, 0))
+		"bunny":
+			var fur := Look.toy(Color("fbfaf6"), 0.8)
+			var pink := Look.toy(Color("ff9ec4"), 0.5, false)
+			for s in [-1.0, 1.0]:
+				var ear := Node3D.new()
+				ear.position = Vector3(s * 0.15, 0.7, 0.05)
+				ear.rotation = Vector3(0.15, 0, -s * 0.2)
+				_upper.add_child(ear)
+				_part(ear, Look.sphere(0.1), fur, Vector3(0, 0.28, 0), Vector3(1, 3.0, 0.55))
+				_part(ear, Look.sphere(0.06), pink, Vector3(0, 0.28, -0.035), Vector3(1, 3.6, 0.4))
+		"wizard":
+			var robe := Look.toy(Color("3b2a9a"), 0.5)
+			_part(_upper, _cyl(0.46, 0.46, 0.03), robe, Vector3(0, 0.68, 0))
+			_part(_upper, _cyl(0.0, 0.3, 0.8), robe, Vector3(0, 1.08, 0.03), Vector3.ONE, Vector3(-0.15, 0, 0))
+			var star := PrismMesh.new()
+			star.size = Vector3(0.1, 0.1, 0.02)
+			for p in [Vector3(0.12, 0.95, -0.24), Vector3(-0.1, 1.15, -0.17), Vector3(0.02, 0.82, -0.29)]:
+				_part(_upper, star, Look.neon(Color("ffd23f"), 2.0), p)
+		"crown", "golden_pin":
+			var gold := _gold()
+			if kind == "golden_pin":
+				_part(_upper, Arena.pin_mesh(), gold, Vector3(0, 0.66, 0), Vector3.ONE * 0.42)
+			else:
+				_part(_upper, _cyl(0.27, 0.27, 0.16), gold, Vector3(0, 0.76, 0))
+				var spike := PrismMesh.new()
+				spike.size = Vector3(0.12, 0.16, 0.05)
+				for i in 6:
+					var a := TAU * i / 6.0
+					var tip := _part(_upper, spike, gold, Vector3(cos(a) * 0.25, 0.91, sin(a) * 0.25))
+					tip.rotation.y = -a + PI * 0.5
+				for i in 3:
+					var a := TAU * i / 3.0 + 0.5
+					_part(_upper, Look.sphere(0.04), Look.neon(Color("ff2050"), 1.2), Vector3(cos(a) * 0.272, 0.76, sin(a) * 0.272))
+		"dunce":
+			_part(_upper, _cyl(0.0, 0.26, 0.85), Look.toy(Color("fbfaf6"), 0.6), Vector3(0, 1.1, 0))
+			_part(_upper, _cyl(0.25, 0.265, 0.09), Look.toy(Color("e8323c"), 0.5), Vector3(0, 0.73, 0))
 
 
 func _glove(side: float) -> Node3D:
@@ -363,9 +451,21 @@ func _glove(side: float) -> Node3D:
 			cuff.outer_radius = 0.11
 			_part(g, cuff, Look.toy(Color.WHITE, 0.3), Vector3(0, 0, 0.14), Vector3.ONE, Vector3(PI * 0.5, 0, 0))
 		"gold":
-			var gold := Look.toy(Color("ffcc33"), 0.15)
-			gold.metallic = 0.85
-			_part(g, Look.sphere(0.17), gold)
+			_part(g, Look.sphere(0.17), _gold())
+		"lava":
+			_part(g, Look.sphere(0.17), Look.neon(Color("ff5a1a"), 1.6))
+		"diamond":
+			var gem := SphereMesh.new()  # few segments = facets
+			gem.radius = 0.18
+			gem.height = 0.36
+			gem.radial_segments = 6
+			gem.rings = 3
+			var ice := Look.toy(Color("9be8ff"), 0.02)
+			ice.metallic = 0.4
+			ice.emission_enabled = true
+			ice.emission = Color("4fd6ff")
+			ice.emission_energy_multiplier = 0.4
+			_part(g, gem, ice)
 		_:
 			_part(g, Look.sphere(0.16), Look.toy(color.darkened(0.1), 0.3))
 	g.position = Vector3(side * 0.55, 0.0, -0.15)
@@ -381,6 +481,16 @@ func _shoe(side: float) -> Node3D:
 	_part(f, Look.box(Vector3(0.24, 0.04, 0.4)), Look.toy(Color("f4f1ea"), 0.6), Vector3(0, -0.075, 0))
 	f.position = Vector3(side * 0.2, -0.78, 0)
 	return f
+
+
+func _gold() -> StandardMaterial3D:
+	## Shiny gold that still looks gold on maps without sky reflections.
+	var m := Look.toy(Color("ffcc33"), 0.2)
+	m.metallic = 0.45
+	m.emission_enabled = true
+	m.emission = Color("ffae00")
+	m.emission_energy_multiplier = 0.25
+	return m
 
 
 func _cyl(top: float, bottom: float, h: float) -> CylinderMesh:

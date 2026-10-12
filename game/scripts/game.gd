@@ -36,6 +36,8 @@ var _ready_peers := {}  # host: clients whose Game node exists, so RPCs to it ca
 var _pre_shown := -1
 var _hurried := false
 var _match_t := 0.0
+var _feats := {pins = 0}  # this player's feats this match, for achievements (Progress)
+var _banked := false
 
 
 func _ready() -> void:
@@ -51,6 +53,7 @@ func _ready() -> void:
 	if server:
 		powerups.is_behind = func(pid: int) -> bool: return scores.has(pid) and _top_score() - scores[pid].total >= COMEBACK_GAP
 		powerups.picked.connect(func(b: Beast, kind: String): _send(_ev_item, [b.pid, kind]))
+		powerups.ball_hit.connect(func(by: int, _v: Beast): _feat(by, "fastball"))
 		arena.bumpers_changed.connect(func(lane: int, on: bool): _send(_ev_bumpers, [lane, on], false))
 	cam = Camera3D.new()
 	cam.fov = 55.0
@@ -192,6 +195,7 @@ func _on_flattened(by: int, victim: Beast) -> void:
 	if over or not scores.has(by) or by == victim.pid:
 		return
 	scores[by].total += FLATTEN_POINTS
+	_feat(by, "collateral")
 	_send(_ev_scores, [scores])
 	_send(_ev_feed, [Net.players[by].name, Net.players[by].color, "BOWLED OVER +%d" % FLATTEN_POINTS, Color("c79a00"), victim.display_name, victim.color])
 
@@ -232,6 +236,19 @@ func _pack_beasts() -> Array:
 
 
 # ================================================================= events (host -> everyone)
+
+func _feat(pid: int, feat: String) -> void:
+	## Host-only knowledge that counts toward someone's achievements: tell just that player.
+	if pid == Net.my_id():
+		_ev_feat(feat)
+	elif _ready_peers.has(pid):
+		_ev_feat.rpc_id(pid, feat)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _ev_feat(feat: String) -> void:
+	_feats[feat] = true
+
 
 func _send(method: Callable, args: Array, local := true) -> void:
 	if local:
@@ -360,6 +377,11 @@ func _ev_roll(lane: int, bowler: int, knocked: int, kind: String, pts: int, come
 	var col: Color = Net.players[bowler].color if Net.players.has(bowler) else Color.WHITE
 	var pos := Vector3(arena.lane_x(lane), 1.0, arena.head_pin_z)
 	var extra := ("  ·  COMEBACK x1.5" if comeback else "") + ("  ·  GOLDEN x2" if golden else "")
+	if bowler == Net.my_id() and kind != "foul":
+		_feats.pins += knocked
+		if kind == "strike":
+			_feats.midas = _feats.get("midas", false) or golden
+			_feats.buzzer = _feats.get("buzzer", false) or (time_left <= 10.0 and not over)
 	match kind:
 		"strike":
 			hud.callout("STRIKE!", Color("ffe14d"), "%s  +%d%s" % [who, pts, extra], true)
@@ -406,7 +428,13 @@ func _ev_end() -> void:
 	var rows := _rows()
 	var top: int = rows[0].pid if not rows.is_empty() else 0
 	var p: Dictionary = Net.players.get(top, {color = Color.WHITE, skin = {}})
-	hud.results(rows, p.color, p.skin)
+	var prog := {}
+	var mine := rows.filter(func(r): return r.pid == Net.my_id())
+	if not _banked and not mine.is_empty() and _match_t > 30.0:  # joined at the very end? nothing to bank
+		_banked = true
+		prog = Progress.finish_match(mine[0], top == Net.my_id() and mine[0].total > 0, _feats)
+		Progress.fresh = prog.unlocks
+	hud.results(rows, p.color, p.skin, prog)
 	Music.play("victory", 0.2)
 
 

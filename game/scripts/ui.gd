@@ -109,6 +109,23 @@ static func sound(clip: String, volume_db := 0.0) -> void:
 		sfx.play_ui(clip, volume_db)
 
 
+static func bar(parent: Node, fill_col: Color, w := 320.0, h := 22.0) -> ProgressBar:
+	## A rounded meter: health, XP.
+	var b := ProgressBar.new()
+	b.custom_minimum_size = Vector2(w, h)
+	b.show_percentage = false
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = fill_col
+	fill.set_corner_radius_all(int(h / 2.0))
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0, 0, 0, 0.55)
+	bg.set_corner_radius_all(int(h / 2.0))
+	b.add_theme_stylebox_override("fill", fill)
+	b.add_theme_stylebox_override("background", bg)
+	parent.add_child(b)
+	return b
+
+
 static func label(parent: Node, text: String, size: int, col: Color, title := false) -> Label:
 	var l := Label.new()
 	l.text = text

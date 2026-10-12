@@ -139,18 +139,7 @@ func _ready() -> void:
 	cv.add_theme_constant_override("separation", 4)
 	card.add_child(cv)
 	_me_name = UI.label(cv, "", 28, Color.WHITE, true)
-	_health = ProgressBar.new()
-	_health.custom_minimum_size = Vector2(320, 22)
-	_health.show_percentage = false
-	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color("3ddc97")
-	fill.set_corner_radius_all(11)
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0, 0, 0, 0.55)
-	bg.set_corner_radius_all(11)
-	_health.add_theme_stylebox_override("fill", fill)
-	_health.add_theme_stylebox_override("background", bg)
-	cv.add_child(_health)
+	_health = UI.bar(cv, Color("3ddc97"))
 	_status = UI.label(cv, "", 18, Color(1, 1, 1, 0.75))
 
 	_prompts = HBoxContainer.new()
@@ -396,7 +385,7 @@ func impact() -> void:
 
 # ------------------------------------------------------------------ results
 
-func results(rows: Array, winner_color: Color, winner_skin: Dictionary) -> void:
+func results(rows: Array, winner_color: Color, winner_skin: Dictionary, prog := {}) -> void:
 	_pause.visible = false
 	_results = Control.new()
 	_results.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -460,10 +449,41 @@ func results(rows: Array, winner_color: Color, winner_skin: Dictionary) -> void:
 		var cells := [str(i + 1), r.name, str(r.total), str(r.get("strikes", 0)), str(r.get("spares", 0)), str(r.get("kos", 0))]
 		for c in cells.size():
 			UI.label(table, cells[c], 30 if c != 1 else 28, r.color.lightened(0.3) if c == 1 else Color.WHITE, c != 1)
+	if not prog.is_empty():
+		_progress_panel(v, prog)
 	UI.label(v, "Back to the lobby in a few seconds...", 20, Color(1, 1, 1, 0.6))
 	UI.pop_in.call_deferred(v)
 	_confetti.position = Vector2(_root.size.x * 0.5, -20)
 	_confetti.restart()
+
+
+func _progress_panel(parent: Control, prog: Dictionary) -> void:
+	## Your XP for the match filling the level bar, then any achievements and unlocks.
+	var a: Dictionary = prog.before
+	var b: Dictionary = prog.after
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	parent.add_child(row)
+	UI.label(row, "+%d XP" % prog.xp, 30, UI.YELLOW, true)
+	var lvl := UI.label(row, "LEVEL %d" % a.level, 30, Color.WHITE, true)
+	var bar := UI.bar(row, UI.YELLOW, 300, 22)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.value = 100.0 * a.into / a.need
+	var tw := bar.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.6)
+	if b.level > a.level:
+		tw.tween_property(bar, "value", 100.0, 0.6)
+		tw.tween_callback(func():
+			lvl.text = "LEVEL %d" % b.level
+			lvl.add_theme_color_override("font_color", UI.YELLOW)
+			UI.pop_in(lvl)
+			Sfx.play_ui("spare")
+			bar.value = 0.0)
+	tw.tween_property(bar, "value", 100.0 * b.into / b.need, 0.6)
+	var lines: Array = prog.achievements.map(func(id): return ["ACHIEVEMENT  ·  " + Progress.ACHIEVEMENTS[id].name, UI.CYAN])
+	lines += prog.unlocks.map(func(r): return ["UNLOCKED  ·  " + Progress.reward_name(r), UI.PINK])
+	for i in mini(lines.size(), 4):
+		UI.label(parent, lines[i][0] if i < 3 or lines.size() == 4 else "...and %d more: check CUSTOMIZE" % (lines.size() - 3), 24, lines[i][1], true)
 
 
 func _process(dt: float) -> void:

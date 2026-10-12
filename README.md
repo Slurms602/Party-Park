@@ -105,6 +105,20 @@ get the scoring ones twice as often.
 | Giant Pin | 3 swings, each one a full SMASH |
 | Bowling Ball | A real ball to throw at people: tap Punch to throw, hold to throw harder. Up to 55 damage |
 
+### Levels, trophies and unlocks
+
+Every match you finish earns XP (25 for finishing, your points, 5 per knockout, 50 for a win), even if you lose.
+The end screen shows your XP filling the level bar and anything you unlocked. **TROPHIES** on the main menu
+lists your level, the next level reward and all 15 achievements.
+
+- **Level rewards:** Flame shoes (2), Cowboy hat (3), Laser eyes (4), Tiger outfit (5), Chef hat (6),
+  Lava gloves (7), Bunny ears (8), Lava outfit (10), Wizard hat (12).
+- **Achievements** (Turkey, Hat Trick, Midas Touch, Buzzer Beater, Fastball, Foul Play...) unlock the rest:
+  Golden Pin hat, Crown, Dunce cap, Sparkle eyes, Fangs, Kiss, Gold suit, Rainbow outfit, Diamond gloves,
+  Gold accent, Ice and Candy shoes.
+- Everything from before stays free. In CUSTOMIZE you can try on a locked item to see it and what earns it.
+- Progress is saved on each player's own device, so everyone levels up on their own.
+
 ### Make it yours
 
 **Customize** from the menu or the lobby to pick a look: hat, eyes, mouth, outfit, gloves, shoes and accent color,
@@ -125,6 +139,7 @@ game/
   scripts/arena.gd      alley geometry and shaders, pins, roll detection, re-racks (Cosmic Lanes)
   scripts/sunset_arena.gd  Sunset Lanes: extends Arena with its own sizes and look
   scripts/powerups.gd   item boxes, the power-up table, thrown bowling balls
+  scripts/progress.gd   XP, levels, achievements and which cosmetics they unlock
   scripts/bot.gd        bots (host-side; they send the same input as a human)
   scripts/hud.gd, scoreboard.gd, main.gd, sfx.gd (synthesized sounds), look.gd (materials, fonts)
   assets/music          menu, match, hurry and victory tracks, rendered by tools/make_music.py
@@ -132,6 +147,7 @@ game/
   tests/test_bowling.gd headless test of knockout → grab → bowl → score → re-rack
   tests/strike_rate.gd  bowls randomized human-ish throws on every map and compares strike rates
   tests/test_powerups.gd  item boxes and every power-up
+  tests/test_progress.gd  levels, locks, achievements and unlocks
 ```
 
 The host runs all physics and sends snapshots at 30 Hz. Clients send input and draw about 100 ms behind,
@@ -141,6 +157,7 @@ interpolating between snapshots.
 godot --headless --path game -s tests/test_bowling.gd                       # core-loop test
 godot --headless --path game -s tests/strike_rate.gd                        # map difficulty check (~1 min)
 godot --headless --path game -s tests/test_powerups.gd                      # power-ups
+godot --headless --path game -s tests/test_progress.gd                      # progression
 godot --headless --path game -- --host --bots=5 --autostart --timescale=3 --quit-after=30   # bot match, prints REPORT (--map=sunset)
 godot --path game -- --join=127.0.0.1 --name=Friend                         # second instance as a client
 python3 tools/make_music.py                                                 # re-render the music (numpy + oggenc)
