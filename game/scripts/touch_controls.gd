@@ -18,6 +18,7 @@ var _vec := Vector2.ZERO
 var _pad: Node2D
 var _buttons: Array[TouchScreenButton] = []
 var me_id := 1  # the local player's peer id (set by Game)
+var arena: Arena  # set by Game; tests may leave it unset
 var _grab_on := false
 var _grab_t := 0.0
 var _was_holding := false
@@ -110,9 +111,7 @@ func _contextual(me: Beast) -> void:
 		return
 	var carrying: bool = me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED)
 	var punch_label: Label = _buttons[0].get_child(0)
-	var parent := get_parent()  # the match (untyped: tests run these controls without one)
-	var bowling: bool = not ("arena" in parent) or parent.arena.is_bowling()
-	punch_label.text = ("BOWL!" if bowling else "THROW") if carrying else {ball = "THROW", giant_pin = "BONK"}.get(me.item, "PUNCH")
+	punch_label.text = (arena.throw_word if arena else "THROW") if carrying else {ball = "THROW", giant_pin = "BONK"}.get(me.item, "PUNCH")
 	if _grab_on:
 		return
 	var near := false

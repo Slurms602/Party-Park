@@ -1,5 +1,5 @@
 class_name SunsetArena
-extends Arena
+extends BowlingArena
 ## Sunset Lanes: a rooftop alley at golden hour, mid-century "googie" style.
 ## Three long, wide lanes with big, widely spaced pins, so a strike takes a well-aimed bowl
 ## (tests/strike_rate.gd: about half as many strikes as the classic alley).
@@ -254,8 +254,8 @@ func _decor() -> void:
 	plinth.height = 0.8
 	Look.mesh(self, plinth, Look.toy(TEAL, 0.4), Vector3(half_w + 4.8, 0.4, -16.0))
 	if Look.high():
-		Dressing.sunset(self)
-		Dressing.skyline(self)
+		AlleyDressing.sunset(self)
+		AlleyDressing.skyline(self)
 	else:
 		_palms()
 		_city()

@@ -1,9 +1,7 @@
 class_name SumoRing
 extends Arena
 ## Sumo Ring minigame: a round clay platform floating over the sea. Knock everyone off; last bowler standing wins.
-## It's an Arena with no lanes, so everything else (bowlers, fists, items, the match) works unchanged.
-
-signal fell(b: Beast)
+## Everyone still on the ring scores each time someone goes over; the last one standing gets a bonus.
 
 const RING_R := 8.5
 const OUT_Y := -2.5  # below the platform's top: you're out
@@ -24,16 +22,9 @@ void fragment() {
 """
 
 
-func _init() -> void:
-	lane_count = 0
-	lane_len = 1000.0  # no lanes and no pit: falling into the sea is handled here
-	aim_assist = 0.0
-
-
 func setup(is_server: bool) -> void:
 	_server = is_server
 	half_w = RING_R + 2.0  # the camera stays over the ring
-	mask_front = -100.0
 	_environment()
 	_floor_and_walls()
 	_decor()
@@ -43,23 +34,49 @@ func safe_radius() -> float:
 	return RING_R - 1.4
 
 
-func item_spots() -> Array:
-	return []
-
-
-func spawn_point(i: int) -> Vector3:
-	var a := TAU * (i % 8) / 8.0 + PI * 0.5
-	return Vector3(cos(a) * 4.8, 1.2, sin(a) * 4.8)
-
-
-func ball_return_point(_x: float) -> Vector3:
-	return spawn_point(0)
-
-
 func server_update(_dt: float, beasts: Array) -> void:
 	for b: Beast in beasts:
-		if not b.out and b.global_position.y < OUT_Y:
-			fell.emit(b)
+		if not b.out and b.global_position.y < OUT_Y and game:
+			_ring_out(b)
+
+
+func _ring_out(b: Beast) -> void:
+	if game.over:
+		return
+	var scores: Dictionary = game.scores
+	var players: Dictionary = get_node("/root/Net").players  # autoloads by path: tests compile this script without them
+	var by := b.last_toucher if b.state >= Beast.BALL and b.last_toucher != 0 else (b.last_hit_by if b.since_hit < 4.0 else 0)
+	b.set_out()
+	for pid in game.beasts:
+		if not game.beasts[pid].out and scores.has(pid):
+			scores[pid].total += 1
+	if by != 0 and by != b.pid and scores.has(by) and players.has(by):
+		scores[by].kos += 1
+		game.feed(players[by].name, players[by].color, "RING OUT", Color("e5383b"), b.display_name, b.color)
+	else:
+		game.feed(b.display_name, b.color, "FELL OFF", Color("6a5a8a"))
+	var alive: Array = game.beasts.values().filter(func(x): return not x.out)
+	if alive.size() <= 1 and game.beasts.size() > 1:
+		if alive.size() == 1 and scores.has(alive[0].pid):
+			scores[alive[0].pid].total += 3
+			game.feed(alive[0].display_name, alive[0].color, "LAST ONE STANDING +3", Color("c79a00"))
+		get_tree().create_timer(1.5).timeout.connect(game.end_match)
+	game.push_scores()
+
+
+func carry_prompts(_me: Beast) -> Array:
+	return [["HOLD LMB", "WIND UP"], ["RELEASE", "THROW THEM OFF!"]]
+
+
+func bot_carry(b: Beast, m: Dictionary, inp: Dictionary, dt: float) -> Dictionary:
+	## Carry them to the nearest edge and throw them over it.
+	var pos := Vector2(b.global_position.x, b.global_position.z)
+	var out := pos / pos.length() if pos.length() > 0.5 else Vector2(0, 1)
+	if pos.length() < safe_radius() - 1.0 and m.get("wind", -1.0) < 0.0:
+		inp.move = out
+		return inp
+	inp.move = out * 0.2  # face outward while winding up
+	return super(b, m, inp, dt)
 
 
 func _environment() -> void:

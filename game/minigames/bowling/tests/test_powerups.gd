@@ -1,10 +1,10 @@
 extends SceneTree
 ## Item boxes and every power-up, through the real sim.
-## Run from the repo root: godot --headless --path game -s tests/test_powerups.gd
+## Run from the repo root: godot --headless --path game -s minigames/bowling/tests/test_powerups.gd
 
 const DT := 1.0 / 60.0
 var _fails := 0
-var _arena: Arena
+var _arena: BowlingArena
 var _pu: Powerups
 
 
@@ -15,7 +15,7 @@ func _initialize() -> void:
 func _run() -> void:
 	var world := Node3D.new()
 	root.add_child(world)
-	_arena = Arena.new()
+	_arena = BowlingArena.new()
 	world.add_child(_arena)
 	_arena.setup(true)
 	_pu = Powerups.new()

@@ -25,7 +25,7 @@ const BOT_NAMES := ["Gutterball", "Split", "Turkey", "Lefty", "Big Lebowski", "P
 var players := {}  # peer id (bots < 0) -> {name, color, bot, skin}
 var in_match := false
 var match_seconds := 180.0
-var map := "classic"  # Arena.MAPS id the host picked (in a party: the minigame being played)
+var map := "classic"  # Arena.maps() id the host picked (in a party: the minigame being played)
 var party := {}  # party mode state, host-authoritative (see Party); empty when playing single matches
 var party_mine := {}  # this player's totals across a party's minigames, banked as one match at the end
 var _next_bot := -1
@@ -447,7 +447,7 @@ func _sync_players(p: Dictionary) -> void:
 @rpc("authority", "call_local", "reliable")
 func _start(seconds: float, map_id: String) -> void:
 	match_seconds = seconds
-	map = map_id if Arena.MAPS.has(map_id) else "classic"
+	map = map_id if Arena.maps().has(map_id) else "classic"
 	in_match = true
 	match_started.emit(seconds)
 

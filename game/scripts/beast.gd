@@ -167,7 +167,7 @@ func sim(inp: Dictionary, dt: float) -> void:
 		BALL, CARRIED: _sim_ball(inp, dt)
 	_prev = inp
 	_assist = inp.get("assist", false)
-	if global_position.z < -arena.lane_len and global_position.y < Arena.PIT_Y + 1.0 and state != CARRIED:
+	if state != CARRIED and arena.in_pit(global_position):
 		_respawn(arena.ball_return_point(global_position.x), Vector3(0, 3.0, 3.5))  # out of the pit via the ball return
 	elif global_position.y < -12.0 or absf(global_position.x) > 30.0 or absf(global_position.z) > 40.0:
 		_respawn(arena.spawn_point(randi() % 8))
@@ -535,23 +535,14 @@ func release_hold(throw_v := Vector3.ZERO) -> void:
 
 func _bowl(power: float) -> void:
 	var ball: Beast = holding
-	var f := _forward()
-	var lane := arena.lane_at(global_position.x)
-	if lane >= 0 and f.z < -0.6:  # gentle assist toward the lane's head pin
-		var aim := Vector3(arena.lane_x(lane), 0.0, arena.head_pin_z) - global_position
-		f = f.lerp(Vector3(aim.x, 0.0, aim.z).normalized(), minf(arena.aim_assist + (0.25 if _assist else 0.0), 0.8)).normalized()
+	var f := arena.aim(self, _forward())
 	var v := f * lerpf(8.0, 17.0, power)
 	release_hold(v - linear_velocity * 0.7)
 	ball.global_position = Vector3(global_position.x, global_position.y - 0.2, global_position.z) + f * 1.0
 	ball.angular_velocity = Vector3.UP.cross(v) / BALL_R
 	ball.projectile_t = 4.0
 	ball.last_toucher = pid
-	ball.foul = global_position.z < 0.0  # bowling from past the foul line scores nothing
-	ball.golden = item == "golden"
-	if item in ["golden", "bumpers"]:
-		if item == "bumpers" and lane >= 0:
-			arena.set_bumpers(lane, true)
-		item = ""
+	arena.launched(self, ball)
 	apply_central_impulse(-f * 1.0 * mass)
 	fx.emit("bowl", global_position, 2.0)
 

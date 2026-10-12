@@ -1,7 +1,7 @@
 extends SceneTree
 ## Tuning check: bowl human-ish throws (off-centre start, aim error, mixed power) on every map and
 ## print the strike rate. Sunset Lanes must be clearly harder than the classic alley.
-## Run from the repo root: godot --headless --path game -s tests/strike_rate.gd
+## Run from the repo root: godot --headless --path game -s minigames/bowling/tests/strike_rate.gd
 
 const DT := 1.0 / 60.0
 const ROLLS := 36
@@ -16,7 +16,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var rates := {}
-	for map_id in Arena.MAPS:
+	for map_id in preload("../minigame.gd").MAPS:
 		rates[map_id] = await _measure(map_id)
 	var ok: bool = rates.sunset < rates.classic * 0.7
 	print("%s  sunset is harder than classic" % ("PASS" if ok else "FAIL"))
@@ -28,7 +28,7 @@ func _measure(map_id: String) -> float:
 	rng.seed = 42
 	var world := Node3D.new()
 	root.add_child(world)
-	var arena := Arena.make(map_id)
+	var arena: BowlingArena = Arena.make(map_id)
 	world.add_child(arena)
 	arena.setup(true)
 	var kinds := []
@@ -77,7 +77,7 @@ func _measure(map_id: String) -> float:
 	return rate
 
 
-func _beast(world: Node3D, arena: Arena, id: int) -> Beast:
+func _beast(world: Node3D, arena: BowlingArena, id: int) -> Beast:
 	var b := Beast.new()
 	world.add_child(b)
 	b.setup(id, {name = "P%d" % id, color = Color.WHITE}, arena, true)
@@ -85,7 +85,7 @@ func _beast(world: Node3D, arena: Arena, id: int) -> Beast:
 	return b
 
 
-func _drive(arena: Arena, beasts: Array, inp: Dictionary, per: Dictionary, frames: int) -> void:
+func _drive(arena: BowlingArena, beasts: Array, inp: Dictionary, per: Dictionary, frames: int) -> void:
 	# `inp` goes to every bowler (odd ids); `per` overrides it per beast.
 	for f in frames:
 		for b: Beast in beasts:

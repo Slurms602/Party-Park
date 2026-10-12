@@ -61,8 +61,9 @@ func _ready() -> void:
 	if _args.has("name"):
 		Prefs.player_name = _args.name
 	_menu_map = _args.get("map", "")
-	if not _menu_map in ["classic", "sunset"]:  # the menu plays a bowling alley behind it, never a minigame field
-		_menu_map = ["classic", "sunset"].pick_random()
+	var menu_maps := Arena.maps().keys().filter(func(id): return Arena.maps()[id].get("menu", false))
+	if not _menu_map in menu_maps:  # only maps made to play behind the menu (the alleys)
+		_menu_map = menu_maps.pick_random()
 	UI.use(Arena.is_dark(_menu_map))
 	_build_ui()
 	_show_attract(true)
@@ -246,10 +247,10 @@ func _build_ui() -> void:
 	row.add_child(_length)
 	_host_only.append(_length)
 	_maps = OptionButton.new()
-	for id in Arena.MAPS:
-		_maps.add_item(Arena.MAPS[id].capitalize())
-	_maps.select(Arena.MAPS.keys().find(Net.map))
-	_maps.item_selected.connect(func(i): Net.map = Arena.MAPS.keys()[i])
+	for id in Arena.maps():
+		_maps.add_item(Arena.maps()[id].map)
+	_maps.select(Arena.maps().keys().find(Net.map))
+	_maps.item_selected.connect(func(i): Net.map = Arena.maps().keys()[i])
 	_maps.custom_minimum_size = Vector2(220, 60)
 	row.add_child(_maps)
 	_host_only.append(_maps)
@@ -761,7 +762,8 @@ func _show_attract(on: bool) -> void:
 		_attract_arena = Arena.make(_menu_map)
 		_attract.add_child(_attract_arena)
 		_attract_arena.setup(true)
-		_attract_arena.screen_board.set_rows([{name = "INSERT FRIENDS", color = Color("ff3fb4"), total = 300, rolls = ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"]}], 0.0)
+		if _attract_arena.screen_board:
+			_attract_arena.screen_board.set_rows([{name = "INSERT FRIENDS", color = Color("ff3fb4"), total = 300, rolls = ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"]}], 0.0)
 		_attract_bots.clear()
 		for i in 4:
 			var b := Beast.new()

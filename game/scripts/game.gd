@@ -5,8 +5,6 @@ extends Node3D
 
 const SNAP_INTERVAL := 1.0 / 30.0
 const INTERP_DELAY := 0.1  # where the adaptive delay starts; see _snap
-const STRIKE_BONUS := 10
-const SPARE_BONUS := 5
 const FLATTEN_POINTS := 2
 const COMEBACK_GAP := 30  # Super Battle Golf-style comeback bonus for whoever is far behind
 const PRE_GAME := 3.0  # 3, 2, 1, BOWL! (Super Battle Golf's tee-off countdown)
@@ -26,7 +24,7 @@ var over := false
 var _server_time := 0.0
 var _snap_acc := 0.0
 var _snaps: Array = []  # client: [time, beasts, time_left]
-var _pin_snaps: Array = []  # client: [time, half-float pin transforms]
+var _arena_snaps: Array = []  # client: [time, arena.snapshot()]
 var _clock := 0.0
 var _delay := INTERP_DELAY  # how far behind the host clients draw: just enough to ride out this connection's jitter
 var _jitter := 0.02
@@ -42,7 +40,7 @@ var _ready_peers := {}  # host: clients whose Game node exists, so RPCs to it ca
 var _pre_shown := -1
 var _hurried := false
 var _match_t := 0.0
-var _feats := {pins = 0}  # this player's feats this match, for achievements (Progress)
+var feats := {pins = 0}  # this player's feats this match, for achievements (Progress); minigames add theirs
 var _banked := false
 
 
@@ -51,19 +49,17 @@ func _ready() -> void:
 	server = Net.is_host()
 	time_left = Net.match_seconds
 	arena = Arena.make(Net.map)
+	arena.name = "Arena"  # the same path on every peer, so the minigame's own RPCs land
+	arena.game = self
 	add_child(arena)
 	arena.setup(server)
-	arena.roll_finished.connect(_on_roll)
-	if server and arena is SumoRing:
-		arena.fell.connect(_on_fell)
 	powerups = Powerups.new()
 	add_child(powerups)
 	powerups.setup(arena, server)
 	if server:
-		powerups.is_behind = func(pid: int) -> bool: return scores.has(pid) and _top_score() - scores[pid].total >= COMEBACK_GAP
-		powerups.picked.connect(func(b: Beast, kind: String): _send(_ev_item, [b.pid, kind]))
-		powerups.ball_hit.connect(func(by: int, _v: Beast): _feat(by, "fastball"))
-		arena.bumpers_changed.connect(func(lane: int, on: bool): _send(_ev_bumpers, [lane, on], false))
+		powerups.is_behind = func(pid: int) -> bool: return scores.has(pid) and top_score() - scores[pid].total >= COMEBACK_GAP
+		powerups.picked.connect(func(b: Beast, kind: String): send(_ev_item, [b.pid, kind]))
+		powerups.ball_hit.connect(func(by: int, _v: Beast): feat(by, "fastball"))
 	cam = Camera3D.new()
 	cam.fov = 55.0
 	add_child(cam)
@@ -73,11 +69,12 @@ func _ready() -> void:
 		Look.dof(cam, 32.0)
 	hud = Hud.new()
 	add_child(hud)
-	hud.board.show_frames = arena.is_bowling()
+	hud.board.show_frames = arena.show_frames
 	_touch = OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args()
 	if _touch:
 		var tc := TouchControls.new()
 		tc.me_id = Net.my_id()
+		tc.arena = arena
 		add_child(tc)
 	Music.duck(PRE_GAME)
 	Net.players_changed.connect(_sync_roster)
@@ -100,8 +97,8 @@ func _sync_roster() -> void:
 			if server:
 				b.knocked_out.connect(_on_ko)
 				b.flattened.connect(_on_flattened)
-				b.fx.connect(func(clip, pos, vol): _send(_ev_fx, [clip, pos, vol]))
-				b.hurt.connect(func(v, by, dir, power, label): _send(_ev_hit, [v.pid, by, dir, power, label]))
+				b.fx.connect(func(clip, pos, vol): send(_ev_fx, [clip, pos, vol]))
+				b.hurt.connect(func(v, by, dir, power, label): send(_ev_hit, [v.pid, by, dir, power, label]))
 				b.threw.connect(powerups.spawn_ball)
 		if not scores.has(pid):
 			scores[pid] = {total = 0, rolls = [], streak = 0, strikes = 0, spares = 0, kos = 0}
@@ -118,7 +115,7 @@ func _sync_roster() -> void:
 			_ready_peers.erase(pid)
 	_refresh_boards()
 	if server:
-		_send(_ev_scores, [scores])
+		send(_ev_scores, [scores])
 
 
 # ================================================================= host
@@ -141,15 +138,17 @@ func _physics_process(dt: float) -> void:
 		time_left -= dt
 		if time_left <= 0.0:
 			time_left = 0.0
-			_end_match()
+			end_match()
 	var lead := _leader()
 	for pid in beasts:
 		beasts[pid].leader = pid == lead
 	_snap_acc += dt
 	if _snap_acc >= SNAP_INTERVAL:
 		_snap_acc = 0.0
-		_send(_snap, [_server_time, _pack_beasts(), time_left, pre, powerups.pack()], false)
-		_send(_snap_pins, [_server_time, arena.pin_snapshot()], false)
+		send(_snap, [_server_time, _pack_beasts(), time_left, pre, powerups.pack()], false)
+		var extra := arena.snapshot()
+		if not extra.is_empty():
+			send(_snap_arena, [_server_time, extra], false)
 
 
 func _send_local_input() -> void:
@@ -174,36 +173,16 @@ func _client_input(mv: Vector2, bits: int) -> void:
 		assist = bits & 16 != 0}  # a touch screen: aim a little more forgiving
 
 
-func _on_roll(lane: int, bowler: int, knocked: int, kind: String) -> void:
-	if over or not scores.has(bowler):
-		return
-	var pts := 0 if kind == "foul" else knocked + (STRIKE_BONUS if kind == "strike" else SPARE_BONUS if kind == "spare" else 0)
-	var comeback: bool = _top_score() - scores[bowler].total >= COMEBACK_GAP and pts > 0
-	if comeback:
-		pts = int(ceil(pts * 1.5))
-	var golden: bool = arena.lanes[lane].golden and pts > 0
-	if golden:
-		pts *= 2
-	scores[bowler].total += pts
-	scores[bowler].rolls.append({strike = "X", spare = "/", foul = "F"}.get(kind, "-" if knocked == 0 else str(knocked)))
-	if kind == "strike":
-		scores[bowler].strikes += 1
-	elif kind == "spare":
-		scores[bowler].spares += 1
-	_send(_ev_scores, [scores])
-	_send(_ev_roll, [lane, bowler, knocked, kind, pts, comeback, golden])
-
-
 func _on_ko(victim: Beast, by: int) -> void:
 	if scores.has(victim.pid):
 		scores[victim.pid].streak = 0
 	if by == 0 or by == victim.pid or not scores.has(by) or not Net.players.has(by):
-		_send(_ev_feed, [victim.display_name, victim.color, "CURLED UP", Color("6a5a8a"), "", Color.WHITE])
+		send(_ev_feed, [victim.display_name, victim.color, "CURLED UP", Color("6a5a8a"), "", Color.WHITE])
 		return
 	scores[by].streak += 1
 	scores[by].kos += 1
 	var rampage: bool = scores[by].streak >= 3
-	_send(_ev_feed, [Net.players[by].name, Net.players[by].color, "RAMPAGE KO" if rampage else "KO", Color("ff3b4e") if not rampage else Color("ff8c2a"),
+	send(_ev_feed, [Net.players[by].name, Net.players[by].color, "RAMPAGE KO" if rampage else "KO", Color("ff3b4e") if not rampage else Color("ff8c2a"),
 		victim.display_name, victim.color])
 
 
@@ -211,39 +190,16 @@ func _on_flattened(by: int, victim: Beast) -> void:
 	if over or not scores.has(by) or by == victim.pid:
 		return
 	scores[by].total += FLATTEN_POINTS
-	_feat(by, "collateral")
-	_send(_ev_scores, [scores])
-	_send(_ev_feed, [Net.players[by].name, Net.players[by].color, "BOWLED OVER +%d" % FLATTEN_POINTS, Color("c79a00"), victim.display_name, victim.color])
+	feat(by, "collateral")
+	send(_ev_scores, [scores])
+	send(_ev_feed, [Net.players[by].name, Net.players[by].color, "BOWLED OVER +%d" % FLATTEN_POINTS, Color("c79a00"), victim.display_name, victim.color])
 
 
-func _on_fell(b: Beast) -> void:
-	## Sumo Ring: everyone still on the ring scores each time someone goes over; the last one standing gets a bonus.
-	if over or b.out:
-		return
-	var by := b.last_toucher if b.state >= Beast.BALL and b.last_toucher != 0 else (b.last_hit_by if b.since_hit < 4.0 else 0)
-	b.set_out()
-	for pid in beasts:
-		if not beasts[pid].out and scores.has(pid):
-			scores[pid].total += 1
-	if by != 0 and by != b.pid and scores.has(by) and Net.players.has(by):
-		scores[by].kos += 1
-		_send(_ev_feed, [Net.players[by].name, Net.players[by].color, "RING OUT", Color("e5383b"), b.display_name, b.color])
-	else:
-		_send(_ev_feed, [b.display_name, b.color, "FELL OFF", Color("6a5a8a"), "", Color.WHITE])
-	var alive: Array = beasts.values().filter(func(x): return not x.out)
-	if alive.size() <= 1 and beasts.size() > 1:
-		if alive.size() == 1 and scores.has(alive[0].pid):
-			scores[alive[0].pid].total += 3
-			_send(_ev_feed, [alive[0].display_name, alive[0].color, "LAST ONE STANDING +3", Color("c79a00"), "", Color.WHITE])
-		get_tree().create_timer(1.5).timeout.connect(_end_match)
-	_send(_ev_scores, [scores])
-
-
-func _end_match() -> void:
+func end_match() -> void:
 	if over:
 		return
 	over = true
-	_send(_ev_end, [])
+	send(_ev_end, [])
 	get_tree().create_timer(7.0 if Net.in_party() else 10.0).timeout.connect(_finish)
 
 
@@ -268,7 +224,7 @@ func _leader() -> int:
 	return best
 
 
-func _top_score() -> int:
+func top_score() -> int:
 	var top := 0
 	for pid in scores:
 		top = maxi(top, scores[pid].total)
@@ -289,24 +245,34 @@ func _pack_beasts() -> Array:
 
 # ================================================================= events (host -> everyone)
 
-func _feat(pid: int, feat: String) -> void:
+func feat(pid: int, what: String) -> void:
 	## Host-only knowledge that counts toward someone's achievements: tell just that player.
 	if pid == Net.my_id():
-		_ev_feat(feat)
+		_ev_feat(what)
 	elif _ready_peers.has(pid):
-		_ev_feat.rpc_id(pid, feat)
+		_ev_feat.rpc_id(pid, what)
 
 
 @rpc("authority", "call_remote", "reliable")
 func _ev_feat(feat: String) -> void:
-	_feats[feat] = true
+	feats[feat] = true
 
 
-func _send(method: Callable, args: Array, local := true) -> void:
+func send(method: Callable, args: Array, local := true) -> void:
+	## Host: call an RPC (of the match or the arena) on every peer whose match is up, and here too unless local is false.
 	if local:
 		method.callv(args)
 	for pid in _ready_peers:
-		rpc_id.callv([pid, method.get_method()] + args)
+		method.get_object().callv("rpc_id", [pid, method.get_method()] + args)
+
+
+func push_scores() -> void:
+	send(_ev_scores, [scores])
+
+
+func feed(a: String, a_col: Color, verb: String, verb_col: Color, b := "", b_col := Color.WHITE) -> void:
+	## Host: a line in everyone's kill feed.
+	send(_ev_feed, [a, a_col, verb, verb_col, b, b_col])
 
 
 @rpc("any_peer", "reliable")
@@ -356,10 +322,10 @@ func _update_stats(dt: float) -> void:
 
 
 @rpc("authority", "call_remote", "unreliable_ordered", 1)
-func _snap_pins(t: float, pins: PackedByteArray) -> void:
-	_pin_snaps.append([t, pins])
-	if _pin_snaps.size() > 30:
-		_pin_snaps.pop_front()
+func _snap_arena(t: float, extra: PackedByteArray) -> void:
+	_arena_snaps.append([t, extra])
+	if _arena_snaps.size() > 30:
+		_arena_snaps.pop_front()
 
 
 @rpc("authority", "call_local", "unreliable")
@@ -370,25 +336,25 @@ func _ev_fx(clip: String, pos: Vector3, vol: float) -> void:
 		_shake = maxf(_shake, 0.25 * near * (1.5 if clip == "smack" else 1.0))
 	var high := Look.high()
 	match clip:
-		"punch": _burst(pos, Color("fff3b0"), 10, 3.0, high)
+		"punch": burst(pos, Color("fff3b0"), 10, 3.0, high)
 		"smack":
-			_burst(pos, Color("ffe14d"), 24, 6.0, high)
+			burst(pos, Color("ffe14d"), 24, 6.0, high)
 			if high:
-				_flash(pos, Color("ffd36b"), 6.0, 5.0)
-				_ring(pos, Color("ffe14d"))
+				flash(pos, Color("ffd36b"), 6.0, 5.0)
+				ring(pos, Color("ffe14d"))
 			if near > 0.5:
 				hud.impact()  # Super Battle Golf-style impact frame on big hits near you
 		"pins":
-			_burst(pos + Vector3(0, 0.6, -1.0), Color.WHITE, 30, 5.0)
+			burst(pos + Vector3(0, 0.6, -1.0), Color.WHITE, 30, 5.0)
 			if high:
-				_flash(pos + Vector3(0, 1.0, -1.0), Color("fff1dc"), 4.0, 6.0)
+				flash(pos + Vector3(0, 1.0, -1.0), Color("fff1dc"), 4.0, 6.0)
 		"ko":
-			_burst(pos + Vector3.UP * 0.8, Color("ffe14d"), 16, 2.5)
+			burst(pos + Vector3.UP * 0.8, Color("ffe14d"), 16, 2.5)
 			if high:
-				_ring(pos + Vector3.UP * 0.2, Color("ff3fb4"))
+				ring(pos + Vector3.UP * 0.2, Color("ff3fb4"))
 
 
-func _flash(pos: Vector3, col: Color, energy: float, reach: float) -> void:
+func flash(pos: Vector3, col: Color, energy: float, reach: float) -> void:
 	## High graphics: a quick light burst that lights up everyone nearby (and the haze).
 	var l := OmniLight3D.new()
 	l.light_color = col
@@ -402,7 +368,7 @@ func _flash(pos: Vector3, col: Color, energy: float, reach: float) -> void:
 	tw.tween_callback(l.queue_free)
 
 
-func _ring(pos: Vector3, col: Color) -> void:
+func ring(pos: Vector3, col: Color) -> void:
 	## High graphics: a shockwave ring racing out along the floor.
 	var ring := TorusMesh.new()
 	ring.inner_radius = 0.9
@@ -419,7 +385,7 @@ func _ring(pos: Vector3, col: Color) -> void:
 	tw.chain().tween_callback(mi.queue_free)
 
 
-func _burst(pos: Vector3, col: Color, amount: int, speed: float, sparks := false) -> void:
+func burst(pos: Vector3, col: Color, amount: int, speed: float, sparks := false) -> void:
 	var p := CPUParticles3D.new()
 	var dot := SphereMesh.new()
 	dot.radius = 0.06
@@ -499,58 +465,15 @@ func _ev_scores(s: Dictionary) -> void:
 
 
 @rpc("authority", "call_local", "reliable")
-func _ev_roll(lane: int, bowler: int, knocked: int, kind: String, pts: int, comeback: bool, golden: bool) -> void:
-	var who: String = Net.players[bowler].name if Net.players.has(bowler) else "?"
-	var col: Color = Net.players[bowler].color if Net.players.has(bowler) else Color.WHITE
-	var pos := Vector3(arena.lane_x(lane), 1.0, arena.head_pin_z)
-	var extra := ("  ·  COMEBACK x1.5" if comeback else "") + ("  ·  GOLDEN x2" if golden else "")
-	if bowler == Net.my_id() and kind != "foul":
-		_feats.pins += knocked
-		if kind == "strike":
-			_feats.midas = _feats.get("midas", false) or golden
-			_feats.buzzer = _feats.get("buzzer", false) or (time_left <= 10.0 and not over)
-	match kind:
-		"strike":
-			if Look.high():  # the pin deck explodes in gold
-				_burst(pos, Color("ffe14d"), 70, 10.0, true)
-				_flash(pos + Vector3.UP * 1.5, Color("ffd36b"), 12.0, 12.0)
-				_ring(pos, Color("ffe14d"))
-			hud.callout("STRIKE!", Color("ffe14d"), "%s  +%d%s" % [who, pts, extra], true)
-			arena.screen_board.flash("STRIKE!", Color("ffe14d"))
-			Music.duck(1.4)
-			Sfx.play_ui("strike")
-		"spare":
-			hud.callout("SPARE!", Color("2de2ff"), "%s  +%d%s" % [who, pts, extra])
-			arena.screen_board.flash("SPARE!", Color("2de2ff"))
-			Music.duck(1.0)
-			Sfx.play_ui("spare")
-		"foul":
-			hud.callout("FOUL!", Color("ff3b4e"), "%s bowled from past the line: no points" % who)
-			arena.screen_board.flash("FOUL!", Color("ff3b4e"))
-			arena.flash_foul()
-			Sfx.play_ui("foul")
-		"gutter":
-			hud.feed_event(who, col, "GUTTER BALL", Color("6a5a8a"))
-			Sfx.play("buzzer", pos, -6.0)
-		_:
-			hud.feed_event(who, col, "%d PINS  +%d" % [knocked, pts], Color("2a7fff"), extra.strip_edges().trim_prefix("·  "), Color.WHITE)
-
-
-@rpc("authority", "call_local", "reliable")
 func _ev_item(pid: int, kind: String) -> void:
 	var b: Beast = beasts.get(pid)
 	var k: Dictionary = Powerups.KINDS[kind]
 	if b:
 		_popup(b.global_position + Vector3.UP * 1.8, k.name, k.color)
-		_burst(b.global_position + Vector3.UP * 0.9, k.color, 20, 4.0)
+		burst(b.global_position + Vector3.UP * 0.9, k.color, 20, 4.0)
 		Sfx.play("ding", b.global_position, 0.0)
 	if Net.players.has(pid):
 		hud.feed_event(Net.players[pid].name, Net.players[pid].color, "GOT " + k.name, k.color.darkened(0.35))
-
-
-@rpc("authority", "call_remote", "reliable")
-func _ev_bumpers(lane: int, on: bool) -> void:
-	arena.set_bumpers(lane, on)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -563,10 +486,10 @@ func _ev_end() -> void:
 	var mine := rows.filter(func(r): return r.pid == Net.my_id())
 	if not _banked and not mine.is_empty() and Net.in_party():
 		_banked = true
-		Net.add_party_stats(mine[0], _feats)  # a party banks once, at the end
+		Net.add_party_stats(mine[0], feats)  # a party banks once, at the end
 	elif not _banked and not mine.is_empty() and _match_t > 30.0:  # joined at the very end? nothing to bank
 		_banked = true
-		prog = Progress.finish_match(mine[0], top == Net.my_id() and mine[0].total > 0, _feats)
+		prog = Progress.finish_match(mine[0], top == Net.my_id() and mine[0].total > 0, feats)
 		Progress.fresh = prog.unlocks
 	hud.results(rows, p.color, p.skin, prog)
 	Music.play("victory", 0.2)
@@ -608,7 +531,7 @@ func _match_flow(dt: float) -> void:
 			hud.countdown(str(p), UI.LIGHT)
 			Sfx.play_ui("beep")
 		elif _pre_shown > 0:
-			hud.countdown("Bowl!" if arena.is_bowling() else "Go!", UI.MUSTARD, 180)
+			hud.countdown(arena.go_word, UI.MUSTARD, 180)
 			Sfx.play_ui("go")
 			Music.play("match", 0.3)
 		_pre_shown = p
@@ -632,12 +555,7 @@ func _prompts(me: Beast) -> Array:
 	if me.out:
 		return [["!", "YOU'RE OUT. CHEER THEM ON!"]]
 	if me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED):
-		if not arena.is_bowling():
-			return [["HOLD LMB", "WIND UP"], ["RELEASE", "THROW THEM OFF!"]]
-		var out := [["HOLD LMB", "WIND UP"], ["RELEASE", "BOWL!"]]
-		if me.global_position.z < 0.3:
-			out.append(["!", "GET BEHIND THE FOUL LINE", true])
-		return out
+		return arena.carry_prompts(me)
 	for b: Beast in beasts.values():
 		if b != me and b.state == Beast.BALL and b.global_position.distance_to(me.global_position) < 2.8:
 			return [["HOLD RMB", "GRAB THEM"]]
@@ -687,9 +605,9 @@ func _interpolate(dt: float) -> void:
 	var w: float = s[2]
 	time_left = b[2]
 	pre = b[3]
-	if not _pin_snaps.is_empty():
-		var p := _bracket(_pin_snaps)
-		arena.apply_pins(p[0][1], p[1][1], p[2])
+	if not _arena_snaps.is_empty():
+		var p := _bracket(_arena_snaps)
+		arena.apply_snapshot(p[0][1], p[1][1], p[2])
 	powerups.apply(a[4], b[4], w)
 	var prev := {}
 	for e in a[1]:
@@ -731,18 +649,17 @@ func _bracket(buf: Array) -> Array:
 
 
 func _update_camera(dt: float, me: Beast) -> void:
-	# Follow your own bowl down the lane for a moment, like Super Battle Golf follows the ball.
+	# Follow your own throw for a moment, like Super Battle Golf follows the ball.
 	if _follow == null and me:
 		for b: Beast in beasts.values():
-			if b.state == Beast.BALL and b.last_toucher == me.pid and b != me and b.global_position.z < 1.0 \
-					and b.global_position.z > -3.0 and arena.lane_at(b.global_position.x) >= 0:
+			if b.state == Beast.BALL and b.last_toucher == me.pid and b != me and arena.follow(b):
 				_follow = b
 				_follow_t = 2.6
 	if _follow:
 		_follow_t -= dt
 		if _follow_t <= 0.0 or not is_instance_valid(_follow) or _follow.state != Beast.BALL:
 			_follow = null
-	var focus := Vector3(0, 0, 4) if arena.is_bowling() else Vector3.ZERO
+	var focus := arena.cam_focus
 	if _follow:
 		focus = _follow.global_position
 	elif me and not me.out:

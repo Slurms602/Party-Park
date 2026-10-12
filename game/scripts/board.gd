@@ -90,7 +90,7 @@ func _enter(phase: String, s: Dictionary) -> void:
 					p.events = m.events
 					p.dice.text = str(m.steps)
 		"intro":
-			var g: Dictionary = Party.MINIGAMES[s.next_game]
+			var g: Dictionary = Arena.maps()[s.next_game]
 			_intro.get_node("V/Name").text = g.name
 			_intro.get_node("V/Rules").text = g.rules
 			UI.pop_in.call_deferred(_intro)
@@ -195,7 +195,7 @@ func _host_clock(dt: float) -> void:
 			if _host_t > INTRO:
 				_host_t = -999.0  # once
 				Net.map = s.next_game
-				Net.start_match(Party.MINIGAMES[s.next_game].seconds)
+				Net.start_match(Arena.maps()[s.next_game].seconds)
 		"final":
 			if _host_t > FINAL:
 				_host_t = -999.0
@@ -482,7 +482,7 @@ func _refresh_hud(s: Dictionary) -> void:
 			var waiting := Party.waiting_on(s, present).size()
 			var last := ""
 			if not s.result.is_empty() and Net.players.has(s.result[0][0]):
-				last = "%s won %s  ·  " % [Net.players[s.result[0][0]].name, Party.MINIGAMES[s.last_game].name]
+				last = "%s won %s  ·  " % [Net.players[s.result[0][0]].name, Arena.maps()[s.last_game].name]
 			_sub.text = last + ("Everyone roll!" if waiting == present.size() else "Waiting on %d..." % waiting)
 		"move":
 			_sub.text = "Hop hop hop..."

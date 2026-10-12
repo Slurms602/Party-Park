@@ -43,7 +43,7 @@ func _initialize() -> void:
 	_check(s.players[1].stars == 0 and s.moves[1].events[0][0] == "broke" and s.star == 9, "no coins, no star (and it stays put)")
 
 	var g := Party.pick_minigame(s)
-	_check(Party.MINIGAMES.has(g) and s.phase == "intro", "a minigame is picked")
+	_check(Arena.maps().has(g) and s.phase == "intro", "a minigame is picked")
 	var repeats := 0
 	for i in 30:
 		var before: String = s.last_game

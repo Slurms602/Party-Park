@@ -1,13 +1,15 @@
-# Bowling your Friends
+# Party Park
 
-A chaotic online party brawler. Beat your friends until they curl up into a ball, then bowl them down the
-lane for points. There are no turns: four lanes, a running clock, and whoever has the most points when time
-runs out wins. Anyone can wreck a bowl in progress by punching the bowler or diving in front of the ball.
+A chaotic online party game: a Mario Party-style board where everyone rolls at once, with a sports minigame after
+every round. The first minigame is the one this started as, **Bowling your Friends**: beat your friends until they
+curl up into a ball, then bowl them down the lane for points. (The app itself is still called Bowling your Friends.)
 
 The combat and physics mix **Gang Beasts** (wobbly bodies, grabbing, mash-to-wake knockouts) with
 **Super Battle Golf** (charged swings, dive tackles, launched bodies that flatten whoever they hit, comeback
-bonus). The look is a 90s cosmic bowling alley. See [docs/RESEARCH.md](docs/RESEARCH.md) for what was pulled
-from each game and why.
+bonus). See [docs/RESEARCH.md](docs/RESEARCH.md) for what was pulled from each game and why.
+
+Each minigame is its own repository, mounted under `game/minigames/` as a git submodule, so clone with
+`git clone --recursive https://github.com/Slurms602/Party-Park` (or run `git submodule update --init` afterwards).
 
 ## Play
 
@@ -97,7 +99,7 @@ The host picks the map in the lobby.
 
 - **Cosmic Lanes**: the blacklight alley. Four lanes, tight pins, strikes come easy.
 - **Sunset Lanes**: a rooftop alley at golden hour. Three longer, wider lanes with bigger, more spread-out
-  pins, and less aim assist. You get about half as many strikes (28% vs 53% in `tests/strike_rate.gd`),
+  pins, and less aim assist. You get about half as many strikes (28% vs 53% in `strike_rate.gd`),
   so aim matters.
 
 ### Power-ups
@@ -170,43 +172,37 @@ color stays the main body color, so you're always easy to spot in a pile.
 
 ```
 game/
-  scripts/net.gd        lobby, hosting/joining by room code, LAN discovery, direct IP (autoload)
-  scripts/relay_peer.gd MultiplayerPeer that tunnels through the relay over a WebSocket
-  scripts/game.gd       match: host simulation, scoring, snapshots, client interpolation, camera
-  scripts/beast.gd      the wobbly bowler: physics, fists, grab, bowl, knockout ball
-  scripts/bowler_model.gd  the bowler's look: bean body + outfit/face shader, hats, gloves, shoes
-  scripts/dressing.gd   high-graphics set dressing: places the Kenney props
-  scripts/menu_art.gd   the menu's paper backdrop and the logo, drawn in code
-  scripts/skins.gd      cosmetic catalog (slots, options, presets): add a cosmetic here + a builder in bowler_model
-  scripts/ui.gd         UI kit (theme, bouncy buttons, panels); prefs.gd saved profile; music.gd music player
-  scripts/arena.gd      alley geometry and shaders, pins, roll detection, re-racks (Cosmic Lanes)
-  scripts/sunset_arena.gd  Sunset Lanes: extends Arena with its own sizes and look
-  scripts/sumo_ring.gd  Sumo Ring minigame: an Arena with no lanes and a ring to fall off
-  scripts/party.gd      party rules (rolls, moves, coins, the star, payouts) on a plain Dictionary
-  scripts/board.gd      the party board: island, spaces, pieces, its screen, and the host's clock
-  scripts/powerups.gd   item boxes, the power-up table, thrown bowling balls
-  scripts/progress.gd   XP, levels, achievements and which cosmetics they unlock
-  scripts/bot.gd        bots (host-side; they send the same input as a human)
-  scripts/hud.gd, scoreboard.gd, main.gd, sfx.gd (synthesized sounds), look.gd (materials, fonts)
-  assets/music          menu, match, hurry and victory tracks, rendered by tools/make_music.py
-  assets/fonts          Fraunces + Nunito (menus), Lilita One + Fredoka (in-world signs); all SIL Open Font License
-  assets/models         cosmetics.glb, built by tools/blender/cosmetics.py (Blender 4.5)
-  assets/props          Kenney kits (CC0, www.kenney.nl): arcade, city, furniture, nature
-  tests/test_bowling.gd headless test of knockout → grab → bowl → score → re-rack
-  tests/strike_rate.gd  bowls randomized human-ish throws on every map and compares strike rates
-  tests/test_powerups.gd  item boxes and every power-up
-  tests/test_progress.gd  levels, locks, achievements and unlocks
-  tests/test_party.gd   party rules
-  tests/render_bench.gd draw calls and GPU time per graphics level and map (run with --rendering-method mobile)
+  scripts/              the core, shared by every minigame:
+    arena.gd            the minigame base class: every hook a minigame can override, with its default
+    game.gd             match: host simulation, scores, snapshots, client interpolation, camera
+    beast.gd            the wobbly bowler: physics, fists, grab, throw, knockout ball
+    bowler_model.gd     the bowler's look: bean body + outfit/face shader, hats, gloves, shoes
+    net.gd              lobby, hosting/joining by room code, LAN discovery, direct IP, party state (autoload)
+    relay_peer.gd       MultiplayerPeer that tunnels through the relay over a WebSocket
+    party.gd, board.gd  party rules (rolls, moves, coins, the star, payouts) and the board itself
+    powerups.gd         item boxes, the power-up table, thrown bowling balls
+    progress.gd         XP, levels, achievements and which cosmetics they unlock
+    bot.gd              bots (host-side; they send the same input as a human)
+    skins.gd            cosmetic catalog: add a cosmetic here + a builder in bowler_model
+    dressing.gd         loads the Kenney props
+    hud.gd, scoreboard.gd, main.gd, ui.gd, menu_art.gd, look.gd, prefs.gd, sfx.gd, music.gd
+  minigames/            one folder per minigame, each its own repo (submodule)
+    bowling/            Bowling your Friends: Cosmic Lanes, Sunset Lanes, their props, bowling tests
+    sumo/               Sumo Ring
+  assets/               music, fonts (SIL OFL), cosmetics.glb (tools/blender/cosmetics.py), Kenney props (CC0)
+  tests/                core tests: party rules, progression, render benchmark
 ```
+
+Adding a minigame is adding a folder with a `minigame.gd` and an `Arena` subclass; nothing in the core changes.
+[CLAUDE.md](CLAUDE.md) has the details and the workflow for working on several minigames at once.
 
 The host runs all physics (on its own thread) and sends snapshots at 30 Hz. Clients send input and draw just far
 enough behind to ride out their connection's jitter (55–150 ms, adaptive), interpolating between snapshots.
 
 ```bash
-godot --headless --path game -s tests/test_bowling.gd                       # core-loop test
-godot --headless --path game -s tests/strike_rate.gd                        # map difficulty check (~1 min)
-godot --headless --path game -s tests/test_powerups.gd                      # power-ups
+godot --headless --path game -s minigames/bowling/tests/test_bowling.gd   # core-loop test
+godot --headless --path game -s minigames/bowling/tests/strike_rate.gd    # map difficulty check (~1 min)
+godot --headless --path game -s minigames/bowling/tests/test_powerups.gd  # power-ups
 godot --headless --path game -s tests/test_progress.gd                      # progression
 godot --headless --path game -s tests/test_party.gd                         # party rules
 godot --headless --path game -- --host --bots=3 --party=2 --timescale=3 --quit-after=80   # a whole party with bots

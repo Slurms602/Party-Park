@@ -1,11 +1,11 @@
 extends SceneTree
 ## Headless check of the core loop through the real input path:
 ## knockout -> grab -> charge -> bowl -> pins scored -> ball return -> re-rack.
-## Run from the repo root: godot --headless --path game -s tests/test_bowling.gd
+## Run from the repo root: godot --headless --path game -s minigames/bowling/tests/test_bowling.gd
 
 const DT := 1.0 / 60.0
 var _fails := 0
-var _arena: Arena
+var _arena: BowlingArena
 
 
 func _initialize() -> void:
@@ -15,7 +15,7 @@ func _initialize() -> void:
 func _run() -> void:
 	var world := Node3D.new()
 	root.add_child(world)
-	var arena := Arena.new()
+	var arena := BowlingArena.new()
 	world.add_child(arena)
 	arena.setup(true)
 	_arena = arena
@@ -55,7 +55,7 @@ func _run() -> void:
 		await _drive(all, {}, 1)
 	_check(victim.state == Beast.STAND and victim.immune > 0.0, "the bowled player comes back awake and immune")
 
-	await _drive(all, {}, int((Arena.RERACK_PARTIAL + 2.0) / DT))
+	await _drive(all, {}, int((BowlingArena.RERACK_PARTIAL + 2.0) / DT))
 	_check(arena.standing(arena.lanes[1]) == 10, "pins are re-racked")
 
 	# Foul: carry the ball past the line and bowl from there.
@@ -78,7 +78,7 @@ func _run() -> void:
 	quit(1 if _fails else 0)
 
 
-func _beast(world: Node3D, arena: Arena, id: int, pos: Vector3) -> Beast:
+func _beast(world: Node3D, arena: BowlingArena, id: int, pos: Vector3) -> Beast:
 	var b := Beast.new()
 	world.add_child(b)
 	b.setup(id, {name = "P%d" % id, color = Color.WHITE}, arena, true)

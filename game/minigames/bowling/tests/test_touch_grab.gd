@@ -1,6 +1,6 @@
 extends SceneTree
 ## Touch controls: GRAB is a toggle, so you can wind up PUNCH with the same thumb and still bowl.
-## Run from the repo root: godot --headless --path game -s tests/test_touch_grab.gd
+## Run from the repo root: godot --headless --path game -s minigames/bowling/tests/test_touch_grab.gd
 
 const DT := 1.0 / 60.0
 var _fails := 0
@@ -16,7 +16,7 @@ func _run() -> void:
 			InputMap.add_action(a)
 	var world := Node3D.new()
 	root.add_child(world)
-	var arena := Arena.new()
+	var arena := BowlingArena.new()
 	world.add_child(arena)
 	arena.setup(true)
 	var x := arena.lane_x(1)
@@ -24,6 +24,7 @@ func _run() -> void:
 	var friend := _beast(world, arena, 2, Vector3(x, 0.9, 1.0))
 	var tc := TouchControls.new()
 	tc.me_id = 1
+	tc.arena = arena
 	root.add_child(tc)
 	await _drive(me, friend, arena, 40)
 	friend.take_hit(1, Vector3.FORWARD, 500.0, 0.5)
@@ -45,7 +46,7 @@ func _run() -> void:
 	quit(1 if _fails else 0)
 
 
-func _beast(world: Node3D, arena: Arena, id: int, pos: Vector3) -> Beast:
+func _beast(world: Node3D, arena: BowlingArena, id: int, pos: Vector3) -> Beast:
 	var b := Beast.new()
 	world.add_child(b)
 	b.setup(id, {name = "P%d" % id, color = Color.WHITE}, arena, true)
@@ -53,7 +54,7 @@ func _beast(world: Node3D, arena: Arena, id: int, pos: Vector3) -> Beast:
 	return b
 
 
-func _drive(me: Beast, other: Beast, arena: Arena, frames: int) -> void:
+func _drive(me: Beast, other: Beast, arena: BowlingArena, frames: int) -> void:
 	for f in frames:
 		await process_frame  # lets TouchControls._process watch what we're holding
 		await physics_frame  # then step inside the physics frame, like the game (physics runs on its own thread)

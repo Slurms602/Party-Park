@@ -22,37 +22,9 @@ static func _think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 		return inp
 	var pos := b.global_position
 
-	if b.holding is Beast and b.holding.state == Beast.CARRIED and not arena.is_bowling():
-		# Sumo: carry them to the nearest edge and throw them over it.
-		inp.grab = true
-		var r := Vector2(pos.x, pos.z).length()
-		var out := Vector2(pos.x, pos.z) / r if r > 0.5 else Vector2(0, 1)
-		if r < arena.safe_radius() - 1.0 and m.get("wind", -1.0) < 0.0:
-			inp.move = out
-		else:
-			m.wind = m.get("wind", -1.0) + dt if m.get("wind", -1.0) >= 0.0 else 0.0
-			inp.move = out * 0.2  # face outward while winding up
-			inp.punch = m.wind < 0.6
-			if not inp.punch:
-				m.wind = -1.0
-		return inp
 	if b.holding is Beast and b.holding.state == Beast.CARRIED:
 		inp.grab = true
-		if m.get("lane", -1) < 0:
-			m.lane = _pick_lane(arena, pos)
-		var to := Vector3(arena.lane_x(m.lane), 0.0, 1.0) - pos
-		to.y = 0.0
-		if to.length() > 0.7 and m.get("wind", -1.0) < 0.0:
-			inp.move = Vector2(to.x, to.z).normalized()
-		else:
-			m.wind = m.get("wind", -1.0) + dt if m.get("wind", -1.0) >= 0.0 else 0.0
-			inp.move = Vector2(0.0, -0.2)  # face down the lane while winding up
-			inp.punch = m.wind < m.get("goal", 0.7)
-			if not inp.punch:
-				m.wind = -1.0
-				m.goal = randf_range(0.45, 0.9)
-				m.lane = -1
-		return inp
+		return arena.bot_carry(b, m, inp, dt)  # each minigame knows what to do with them
 	m.wind = -1.0
 
 	if b.holding != null:  # dragging someone or swinging a pin
@@ -93,16 +65,12 @@ static func _think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 
 static func _fight(b: Beast, arena: Arena, m: Dictionary, inp: Dictionary, dt: float, reach: float) -> Dictionary:
 	if m.get("retarget", 0.0) <= 0.0 or not is_instance_valid(m.get("target")):
-		# Fight where the bowling happens: don't chase people down the lanes unless they're right here.
-		var pos := b.global_position
-		var bowling := arena.is_bowling()
-		m.target = _nearest(b, func(o: Beast): return o.state <= Beast.DIVE and o.immune <= 0.0 and not o.out and (not bowling or o.global_position.z > -1.5 or o.global_position.distance_to(pos) < 3.0), 30.0)
+		m.target = _nearest(b, func(o: Beast): return o.state <= Beast.DIVE and o.immune <= 0.0 and not o.out and arena.bot_chases(b, o), 30.0)
 		m.retarget = randf_range(0.6, 1.5)
 	m.retarget -= dt
 	var target = m.target
 	if target == null or not is_instance_valid(target):
-		var spot := Vector3(sin(m.t * 0.4) * 5.0, 0.0, 6.0) if arena.is_bowling() else Vector3(sin(m.t * 0.4), 0.0, cos(m.t * 0.3)) * 2.0
-		var home := spot - b.global_position  # mill about the back floor (or the middle of the ring)
+		var home := arena.bot_home(m.t) - b.global_position
 		inp.move = Vector2(home.x, home.z).limit_length(1.0) * 0.6
 		return inp
 	var to: Vector3 = target.global_position - b.global_position
@@ -153,13 +121,3 @@ static func _nearest_box(b: Beast, max_d: float) -> Node3D:
 			max_d = d
 	return best
 
-
-static func _pick_lane(arena: Arena, pos: Vector3) -> int:
-	var best := 0
-	var best_score := -INF
-	for lane in arena.lanes:
-		var score := arena.standing(lane) * 1.5 - absf(arena.lane_x(lane.i) - pos.x) + randf() * 2.0
-		if score > best_score:
-			best = lane.i
-			best_score = score
-	return best

@@ -12,11 +12,6 @@ const BLUE := 3
 const RED := 3
 const LUCKY := [3, 5, 8]
 const PLACE_COINS := [10, 7, 5, 3, 2, 1, 1, 1]  # by finishing place in a minigame
-const MINIGAMES := {
-	classic = {name = "Cosmic Bowling", rules = "Knock them out, bowl them into the pins. Most points wins.", seconds = 75.0},
-	sunset = {name = "Sunset Bowling", rules = "Longer lanes, bigger pins. Most points wins.", seconds = 75.0},
-	sumo = {name = "Sumo Ring", rules = "Knock everyone off the ring. Last bowler standing wins.", seconds = 60.0},
-}
 
 
 static func new_state(pids: Array, rounds: int) -> Dictionary:
@@ -99,7 +94,7 @@ static func resolve(state: Dictionary) -> void:
 
 
 static func pick_minigame(state: Dictionary) -> String:
-	var pool := MINIGAMES.keys().filter(func(g): return g != state.last_game)
+	var pool := Arena.maps().keys().filter(func(g): return g != state.last_game)
 	state.next_game = pool.pick_random()
 	state.last_game = state.next_game
 	state.phase = "intro"
