@@ -24,6 +24,7 @@ var _lock_hint: Label
 var _level_label: Label
 var _trophies: VBoxContainer
 var _post: CanvasLayer
+var _menu_map := ""  # the map playing behind the menu, picked once per session so the menu's palette stays put
 var _backdrop: MenuArt.Backdrop
 var _tabs: Array[Button] = []
 var _gfx: CheckButton
@@ -51,6 +52,8 @@ func _ready() -> void:
 		_args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	if _args.has("name"):
 		Prefs.player_name = _args.name
+	_menu_map = _args.get("map", Arena.MAPS.keys().pick_random())
+	UI.use(Arena.is_dark(_menu_map))
 	_build_ui()
 	_show_attract(true)
 	_post = Look.post_layer()
@@ -238,6 +241,7 @@ func _build_ui() -> void:
 	var start := UI.primary(UI.button(lobby, "Start match", func(): Net.start_match(_length.get_selected_id() * 60.0)))
 	start.add_theme_font_size_override("font_size", 38)
 	start.custom_minimum_size.y = 74
+	start.size_flags_horizontal = Control.SIZE_FILL  # the one big button spans the screen
 	_host_only.append(start)
 	var row2 := HBoxContainer.new()
 	row2.add_theme_constant_override("separation", 10)
@@ -453,7 +457,7 @@ func _refresh_trophies() -> void:
 		if have:
 			var tick := PanelContainer.new()
 			tick.add_theme_stylebox_override("panel", UI.pill(UI.RED, 0, 14))
-			UI.label(tick, "Done", 16, UI.CREAM, true)
+			UI.label(tick, "Done", 16, UI.LIGHT, true)
 			tick.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			row.add_child(tick)
 	UI.label(_trophies, "%d of %d achievements" % [done, Progress.ACHIEVEMENTS.size()], 18, Color(UI.NAVY, 0.65))
@@ -710,7 +714,7 @@ func _show_attract(on: bool) -> void:
 	if on and _attract == null:
 		_attract = Node3D.new()
 		add_child(_attract)
-		_attract_arena = Arena.make(_args.get("map", Arena.MAPS.keys().pick_random()))
+		_attract_arena = Arena.make(_menu_map)
 		_attract.add_child(_attract_arena)
 		_attract_arena.setup(true)
 		_attract_arena.screen_board.set_rows([{name = "INSERT FRIENDS", color = Color("ff3fb4"), total = 300, rolls = ["X", "X", "X", "X", "X", "X", "X", "X", "X", "X"]}], 0.0)
@@ -779,6 +783,7 @@ func _on_match_started(_seconds: float) -> void:
 
 
 func _on_match_ended() -> void:
+	UI.use(Arena.is_dark(_menu_map))  # the match may have switched to the other palette
 	if _game:
 		_game.queue_free()
 		_game = null

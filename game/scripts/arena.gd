@@ -108,6 +108,10 @@ var _foul_mat: StandardMaterial3D
 var _server := false
 
 
+static func is_dark(map_id: String) -> bool:
+	return map_id == "classic"  # the blacklight alley; the UI goes dark to match
+
+
 static func make(map_id: String) -> Arena:
 	return SunsetArena.new() if map_id == "sunset" else Arena.new()
 

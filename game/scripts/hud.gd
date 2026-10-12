@@ -59,7 +59,7 @@ class ChargeMeter extends Control:
 		draw_style_box(fill_style, inner)
 		if full:
 			var f := UI.display_font()
-			draw_string_outline(f, Vector2(-30, -20 + wob), "Max!", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 10, UI.NAVY)
+			draw_string_outline(f, Vector2(-30, -20 + wob), "Max!", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 10, UI.DARK)
 			draw_string(f, Vector2(-30, -20 + wob), "Max!", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, UI.MUSTARD)
 
 
@@ -272,7 +272,7 @@ func set_box_marks(pts: Array) -> void:
 func set_item(text: String, col: Color) -> void:
 	## The item you're holding replaces the status line under your health bar.
 	_status.text = text
-	_status.add_theme_color_override("font_color", col.darkened(0.45))  # item colours are bright; ink them for cream
+	_status.add_theme_color_override("font_color", UI.ink(col))
 
 
 func set_prompts(items: Array) -> void:
@@ -292,7 +292,7 @@ func set_prompts(items: Array) -> void:
 		style.content_margin_left = 14
 		style.content_margin_right = 14
 		cap.add_theme_stylebox_override("panel", style)
-		UI.label(cap, it[0], 20, UI.CREAM, true)
+		UI.label(cap, it[0], 20, UI.CREAM, true)  # inverse of the keycap's ink
 		row.add_child(cap)
 		UI.hero(row, UI.sentence(it[1]), 28)
 		_prompts.add_child(row)
@@ -325,7 +325,7 @@ func feed_event(a: String, a_col: Color, verb: String, verb_col: Color, b := "",
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	chip.add_child(row)
-	UI.label(row, a, 22, a_col.darkened(0.35), true)
+	UI.label(row, a, 22, UI.ink(a_col), true)
 	if verb != "":
 		var pill := PanelContainer.new()
 		var ps := UI.pill(verb_col, 0, 12)
@@ -334,11 +334,11 @@ func feed_event(a: String, a_col: Color, verb: String, verb_col: Color, b := "",
 		ps.content_margin_top = 2
 		ps.content_margin_bottom = 4
 		pill.add_theme_stylebox_override("panel", ps)
-		UI.label(pill, UI.sentence(verb), 17, UI.CREAM, true)
+		UI.label(pill, UI.sentence(verb), 17, UI.LIGHT, true)
 		pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(pill)
 	if b != "":
-		UI.label(row, b, 22, b_col.darkened(0.35), true)
+		UI.label(row, b, 22, UI.ink(b_col), true)
 	_feed.add_child(chip)
 	UI.pop_in.call_deferred(chip)
 	if _feed.get_child_count() > 6:
@@ -464,7 +464,7 @@ func results(rows: Array, winner_color: Color, winner_skin: Dictionary, prog := 
 		var r: Dictionary = rows[i]
 		var cells := [str(i + 1), r.name, str(r.total), str(r.get("strikes", 0)), str(r.get("spares", 0)), str(r.get("kos", 0))]
 		for c in cells.size():
-			UI.label(table, cells[c], 28, r.color.darkened(0.35) if c == 1 else UI.NAVY, true)
+			UI.label(table, cells[c], 28, UI.ink(r.color) if c == 1 else UI.NAVY, true)
 	if not prog.is_empty():
 		_progress_panel(v, prog)
 	UI.label(v, "Back to the lobby in a few seconds...", 17, Color(UI.NAVY, 0.55))

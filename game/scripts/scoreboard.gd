@@ -4,7 +4,6 @@ extends Control
 ## big = the overhead alley screen (a dark LED board in the 3D scene); otherwise the compact cream HUD card.
 
 const MARK_COLORS := {"X": Color("ffe14d"), "/": Color("2de2ff"), "-": Color(1, 1, 1, 0.4), "F": Color("ff3b4e")}
-const INK_MARKS := {"X": UI.RED, "/": UI.TEAL, "-": Color(UI.NAVY, 0.35), "F": Color("a3171f")}
 
 var big := false
 var rows: Array = []  # [{name, color, total, rolls: Array[String], me}], sorted best first
@@ -81,7 +80,7 @@ func _draw() -> void:
 		if i == 0 and r.total > 0:
 			_crown(Vector2(10 + rank_w * 0.5, y + row_h * 0.12), row_h * 0.22)
 		draw_rect(Rect2(rank_w + 10, y + 5, 6, row_h - 14), r.color)
-		_text(body, Vector2(rank_w + 24, y + row_h * 0.68), r.name, fs, r.color.lightened(0.35) if big else r.color.darkened(0.4))
+		_text(body, Vector2(rank_w + 24, y + row_h * 0.68), r.name, fs, r.color.lightened(0.35) if big else UI.ink(r.color))
 		var rolls: Array = r.rolls.slice(maxi(r.rolls.size() - frames, 0))
 		for f in frames:
 			var bx := rank_w + name_w + f * box_w
@@ -93,7 +92,7 @@ func _draw() -> void:
 				draw_style_box(UI.pill(Color(UI.SAND, 0.75), 0, 6), rect)
 			if f < rolls.size():
 				var code: String = rolls[f]
-				_text(title, Vector2(bx + box_w * 0.5, y + row_h * 0.68), code, fs, (MARK_COLORS if big else INK_MARKS).get(code, ink), HORIZONTAL_ALIGNMENT_CENTER)
+				_text(title, Vector2(bx + box_w * 0.5, y + row_h * 0.68), code, fs, (MARK_COLORS if big else {"X": UI.RED, "/": UI.TEAL, "-": Color(UI.NAVY, 0.35), "F": UI.RED.darkened(0.3)}).get(code, ink), HORIZONTAL_ALIGNMENT_CENTER)
 		_text(title, Vector2(w - 16, y + row_h * 0.72), str(r.total), int(fs * (1.25 + glow * 0.4)), ink, HORIZONTAL_ALIGNMENT_RIGHT)
 
 	if big and _flash_t > 0.0:  # the alley-screen STRIKE! animation

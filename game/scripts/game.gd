@@ -41,6 +41,7 @@ var _banked := false
 
 
 func _ready() -> void:
+	UI.use(Arena.is_dark(Net.map))  # the HUD contrasts with this map
 	server = Net.is_host()
 	time_left = Net.match_seconds
 	arena = Arena.make(Net.map)
@@ -519,7 +520,7 @@ func _match_flow(dt: float) -> void:
 	var p := int(ceil(pre))
 	if p != _pre_shown:
 		if p > 0:
-			hud.countdown(str(p), UI.CREAM)
+			hud.countdown(str(p), UI.LIGHT)
 			Sfx.play_ui("beep")
 		elif _pre_shown > 0:
 			hud.countdown("Bowl!", UI.MUSTARD, 180)

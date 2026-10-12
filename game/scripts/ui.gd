@@ -2,18 +2,42 @@ class_name UI
 ## Shared UI kit: palette, fonts, theme, buttons, cards and labels.
 ## The look takes its cues from Super Battle Golf's menus: warm cream paper, deep navy ink, one bold accent,
 ## heavy italic display type, soft shadows and almost no outlines or glow.
+## Two palettes so the UI contrasts with the map behind it: light for bright maps, dark for the blacklight alley.
+## The colour names come from the light palette; use() swaps what they hold.
 
-const CREAM := Color("fff4df")  # the paper everything sits on
-const PAPER := Color("fffaf2")  # cards on cream, hovered buttons
-const SAND := Color("f0dcb6")  # pressed, tracks, dividers
-const NAVY := Color("1d2340")  # ink
-const RED := Color("e5383b")  # the brand accent
-const MUSTARD := Color("ffb400")
-const TEAL := Color("158f89")
-const SHADOW := Color(0.11, 0.09, 0.2, 0.24)
+const LIGHT := Color("fff4df")  # fixed: type over the 3D scene, text on coloured pills
+const DARK := Color("1d2340")
 
-static var _theme: Theme
+static var dark := false
+static var CREAM := LIGHT  # the paper everything sits on
+static var PAPER := Color("fffaf2")  # cards on the paper, hovered buttons
+static var SAND := Color("f0dcb6")  # pressed, tracks, dividers
+static var NAVY := DARK  # ink
+static var RED := Color("e5383b")  # the brand accent
+static var MUSTARD := Color("ffb400")
+static var TEAL := Color("158f89")
+static var SHADOW := Color(0.11, 0.09, 0.2, 0.24)
+
+static var _themes := {}
 static var _fonts := {}
+
+
+static func use(dark_mode: bool) -> void:
+	## Pick the palette for what's behind the UI. Controls built afterwards use it.
+	dark = dark_mode
+	CREAM = Color("1c1538") if dark else LIGHT
+	PAPER = Color("2a2152") if dark else Color("fffaf2")
+	SAND = Color("3d3274") if dark else Color("f0dcb6")
+	NAVY = Color("fff1dc") if dark else DARK
+	RED = Color("ff5a64") if dark else Color("e5383b")
+	MUSTARD = Color("ffc233") if dark else Color("ffb400")
+	TEAL = Color("43d9c6") if dark else Color("158f89")
+	SHADOW = Color(0, 0, 0, 0.45) if dark else Color(0.11, 0.09, 0.2, 0.24)
+
+
+static func ink(c: Color) -> Color:
+	## A player or item colour made readable on the current paper.
+	return c.lightened(0.3) if dark else c.darkened(0.38)
 
 
 static func display_font() -> Font:
@@ -38,8 +62,8 @@ static func body_font(weight := 700) -> Font:
 
 
 static func theme() -> Theme:
-	if _theme:
-		return _theme
+	if _themes.has(dark):
+		return _themes[dark]
 	var t := Theme.new()
 	t.default_font = body_font()
 	t.default_font_size = 22
@@ -118,7 +142,7 @@ static func theme() -> Theme:
 	t.set_stylebox("grabber", "VScrollBar", scroll)
 	t.set_stylebox("grabber_highlight", "VScrollBar", scroll)
 	t.set_stylebox("scroll", "VScrollBar", StyleBoxEmpty.new())
-	_theme = t
+	_themes[dark] = t
 	return t
 
 
@@ -160,7 +184,7 @@ static func primary(b: Button) -> Button:
 	b.add_theme_stylebox_override("pressed", pill(RED.darkened(0.15), 1))
 	b.add_theme_stylebox_override("hover_pressed", pill(RED.darkened(0.15), 1))
 	for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
-		b.add_theme_color_override(k, CREAM)
+		b.add_theme_color_override(k, LIGHT)
 	return b
 
 
@@ -229,7 +253,7 @@ static func label(parent: Node, text: String, size: int, col := NAVY, title := f
 	return l
 
 
-static func hero(parent: Node, text: String, size: int, fill := CREAM, ink := NAVY) -> Label:
+static func hero(parent: Node, text: String, size: int, fill := LIGHT, ink := DARK) -> Label:
 	## Big type over the 3D scene: display face with a thick ink outline and a drop shadow.
 	var l := label(parent, text, size, fill, true)
 	l.add_theme_color_override("font_outline_color", ink)
