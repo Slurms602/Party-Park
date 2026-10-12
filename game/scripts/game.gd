@@ -60,6 +60,8 @@ func _ready() -> void:
 	cam.position = Vector3(0, 10, 16)
 	add_child(cam)
 	cam.current = true
+	if Look.high():
+		Look.dof(cam, 32.0)
 	hud = Hud.new()
 	add_child(hud)
 	if OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args():
@@ -287,17 +289,58 @@ func _ev_fx(clip: String, pos: Vector3, vol: float) -> void:
 	var near := clampf(1.0 - pos.distance_to(cam.global_position) / 30.0, 0.0, 1.0)
 	if clip in ["smack", "pins", "ko"]:
 		_shake = maxf(_shake, 0.25 * near * (1.5 if clip == "smack" else 1.0))
+	var high := Look.high()
 	match clip:
-		"punch": _burst(pos, Color("fff3b0"), 10, 3.0)
+		"punch": _burst(pos, Color("fff3b0"), 10, 3.0, high)
 		"smack":
-			_burst(pos, Color("ffe14d"), 24, 6.0)
+			_burst(pos, Color("ffe14d"), 24, 6.0, high)
+			if high:
+				_flash(pos, Color("ffd36b"), 6.0, 5.0)
+				_ring(pos, Color("ffe14d"))
 			if near > 0.5:
 				hud.impact()  # Super Battle Golf-style impact frame on big hits near you
-		"pins": _burst(pos + Vector3(0, 0.6, -1.0), Color.WHITE, 30, 5.0)
-		"ko": _burst(pos + Vector3.UP * 0.8, Color("ffe14d"), 16, 2.5)
+		"pins":
+			_burst(pos + Vector3(0, 0.6, -1.0), Color.WHITE, 30, 5.0)
+			if high:
+				_flash(pos + Vector3(0, 1.0, -1.0), Color("fff1dc"), 4.0, 6.0)
+		"ko":
+			_burst(pos + Vector3.UP * 0.8, Color("ffe14d"), 16, 2.5)
+			if high:
+				_ring(pos + Vector3.UP * 0.2, Color("ff3fb4"))
 
 
-func _burst(pos: Vector3, col: Color, amount: int, speed: float) -> void:
+func _flash(pos: Vector3, col: Color, energy: float, reach: float) -> void:
+	## High graphics: a quick light burst that lights up everyone nearby (and the haze).
+	var l := OmniLight3D.new()
+	l.light_color = col
+	l.light_energy = energy
+	l.omni_range = reach
+	l.light_volumetric_fog_energy = 2.0
+	add_child(l)
+	l.global_position = pos
+	var tw := l.create_tween()
+	tw.tween_property(l, "light_energy", 0.0, 0.3).set_ease(Tween.EASE_IN)
+	tw.tween_callback(l.queue_free)
+
+
+func _ring(pos: Vector3, col: Color) -> void:
+	## High graphics: a shockwave ring racing out along the floor.
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.9
+	ring.outer_radius = 1.0
+	var m := Look.neon(col, 3.0)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var mi := Look.mesh(self, ring, m)
+	mi.global_position = Vector3(pos.x, 0.08, pos.z)
+	mi.scale = Vector3(0.3, 0.05, 0.3)
+	var tw := mi.create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(mi, "scale", Vector3(2.4, 0.05, 2.4), 0.4)
+	tw.tween_property(m, "albedo_color:a", 0.0, 0.4)
+	tw.chain().tween_callback(mi.queue_free)
+
+
+func _burst(pos: Vector3, col: Color, amount: int, speed: float, sparks := false) -> void:
 	var p := CPUParticles3D.new()
 	var dot := SphereMesh.new()
 	dot.radius = 0.06
@@ -305,6 +348,9 @@ func _burst(pos: Vector3, col: Color, amount: int, speed: float) -> void:
 	dot.radial_segments = 6
 	dot.rings = 3
 	p.mesh = dot
+	if sparks:  # streaks that point the way they fly
+		p.mesh = Look.box(Vector3(0.035, 0.32, 0.035))
+		p.particle_flag_align_y = true
 	p.material_override = Look.neon(col, 4.0)
 	p.one_shot = true
 	p.explosiveness = 1.0
@@ -384,6 +430,10 @@ func _ev_roll(lane: int, bowler: int, knocked: int, kind: String, pts: int, come
 			_feats.buzzer = _feats.get("buzzer", false) or (time_left <= 10.0 and not over)
 	match kind:
 		"strike":
+			if Look.high():  # the pin deck explodes in gold
+				_burst(pos, Color("ffe14d"), 70, 10.0, true)
+				_flash(pos + Vector3.UP * 1.5, Color("ffd36b"), 12.0, 12.0)
+				_ring(pos, Color("ffe14d"))
 			hud.callout("STRIKE!", Color("ffe14d"), "%s  +%d%s" % [who, pts, extra], true)
 			arena.screen_board.flash("STRIKE!", Color("ffe14d"))
 			Music.duck(1.4)

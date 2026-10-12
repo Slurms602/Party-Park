@@ -10,6 +10,7 @@ uniform vec3 base : source_color = vec3(1.0);
 uniform vec3 accent : source_color = vec3(1.0);
 uniform int pattern = 0;
 uniform float flash = 0.0;
+uniform float coat = 0.0;  // high graphics: glossy vinyl with a little light passing through
 float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void fragment() {
 	float u = UV.x;
@@ -87,6 +88,9 @@ void fragment() {
 	}
 	ALBEDO = col;
 	METALLIC = metal;
+	CLEARCOAT = coat;
+	CLEARCOAT_ROUGHNESS = 0.18;
+	SSS_STRENGTH = coat * 0.3;
 	ROUGHNESS = 0.32;
 	RIM = 0.5;
 	RIM_TINT = 0.3;
@@ -146,6 +150,7 @@ func build(c: Color, s: Dictionary) -> void:
 	_body_mat.set_shader_parameter("base", color)
 	_body_mat.set_shader_parameter("accent", accent)
 	_body_mat.set_shader_parameter("pattern", Skins.SLOTS.outfit.find(skin.outfit))
+	_body_mat.set_shader_parameter("coat", 0.6 if Look.high() else 0.0)
 	_body_mat.next_pass = Look.outline()
 	var body := MeshInstance3D.new()
 	body.mesh = _bean()

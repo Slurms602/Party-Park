@@ -131,6 +131,9 @@ func _environment() -> void:
 	env.fog_sky_affect = 0.0  # haze the city, not the sky
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.1
+	if Look.high():
+		Look.dress_env(env, Color("ffd2b0"), 0.004)
+		env.tonemap_exposure = 0.9  # the haze and bounce light brighten the cream floor
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -140,6 +143,7 @@ func _environment() -> void:
 	sun.light_color = Color("ffb36b")
 	sun.light_energy = 1.3
 	sun.shadow_enabled = true
+	sun.light_volumetric_fog_energy = 0.8  # sun shafts through the palms (high graphics haze)
 	add_child(sun)
 	var fill := DirectionalLight3D.new()  # cool evening sky fill from behind the camera
 	fill.rotation_degrees = Vector3(-45, 20, 0)

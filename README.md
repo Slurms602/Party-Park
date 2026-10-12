@@ -105,6 +105,19 @@ get the scoring ones twice as often.
 | Giant Pin | 3 swings, each one a full SMASH |
 | Bowling Ball | A real ball to throw at people: tap Punch to throw, hold to throw harder. Up to 55 damage |
 
+### Graphics
+
+**SETTINGS → HIGH-END GRAPHICS** (on by default on PC, off on phones). It adds:
+- volumetric haze that catches the light: sweeping disco beams and spotlit pin decks in Cosmic Lanes, sun haze
+  on Sunset Lanes;
+- bounce light (SSIL), softer shadows, lacquered lanes and glossy vinyl bowlers;
+- a filmic finishing pass (contrast, split toning, vignette, lens fringing, grain) and soft depth of field;
+- light flashes, shockwave rings and spark streaks on big hits, and a golden explosion on strikes;
+- frosted-glass menu panels.
+
+Off, the game looks exactly like the original Classic look. On first launch the game watches the menu for a few
+seconds and switches itself to Classic if it runs under 35 fps.
+
 ### Levels, trophies and unlocks
 
 Every match you finish earns XP (25 for finishing, your points, 5 per knockout, 50 for a win), even if you lose.

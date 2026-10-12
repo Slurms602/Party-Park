@@ -23,6 +23,9 @@ var _browse := {}  # slot -> a locked option being previewed (never saved to you
 var _lock_hint: Label
 var _level_label: Label
 var _trophies: VBoxContainer
+var _post: CanvasLayer
+var _gfx: CheckButton
+var _perf := Vector3.ZERO  # first-launch frame-rate check: seconds watched, frames counted, seconds counted
 var _args := {}
 var _logo_node: Control
 var _code: LineEdit
@@ -48,6 +51,9 @@ func _ready() -> void:
 		Prefs.player_name = _args.name
 	_build_ui()
 	_show_attract(true)
+	_post = Look.post_layer()
+	add_child(_post)
+	_post.visible = Look.high()
 	Net.players_changed.connect(_refresh_lobby)
 	Net.match_started.connect(_on_match_started)
 	Net.match_ended.connect(_on_match_ended)
@@ -513,9 +519,46 @@ func _build_settings(stack: Control) -> void:
 		Prefs.fullscreen = on
 		Prefs.apply())
 	v.add_child(fs)
+	_gfx = CheckButton.new()
+	_gfx.text = "HIGH-END GRAPHICS (turn off if it's slow)"
+	_gfx.button_pressed = Prefs.graphics == "high"
+	_gfx.toggled.connect(_set_graphics)
+	v.add_child(_gfx)
 	UI.button(v, "BACK", func():
 		Prefs.save()
 		_show("lobby" if Net.is_online() else "main"))
+
+
+func _set_graphics(on: bool) -> void:
+	Prefs.graphics = "high" if on else "classic"
+	Prefs.graphics_checked = true  # the player chose: never second-guess it
+	Prefs.apply()
+	Prefs.save()
+	Arena._pin_mat = null  # cached materials are rebuilt with the new look
+	Powerups._ball_mesh = null
+	_post.visible = on
+	_gfx.set_pressed_no_signal(on)
+	if _game == null:
+		_show_attract(false)
+		_show_attract(true)
+
+
+func _check_performance(dt: float) -> void:
+	## First launch on High: watch the menu for a few seconds. Too slow for a good first impression? Go Classic.
+	if Prefs.graphics_checked or not Look.high() or _args.has("shot") or DisplayServer.get_name() == "headless":
+		return
+	_perf.x += dt
+	if _perf.x > 3.0:  # skip the loading hitch
+		_perf.y += 1.0
+		_perf.z += dt
+	if _perf.x > 9.0:
+		var fps := _perf.y / _perf.z
+		if fps < 35.0:
+			_set_graphics(false)
+			_toast("Switched to Classic graphics so the game runs smoothly (%d fps). Change it in SETTINGS." % fps)
+		else:
+			Prefs.graphics_checked = true
+			Prefs.save()
 
 
 func _refresh_lobby() -> void:
@@ -651,6 +694,8 @@ func _show_attract(on: bool) -> void:
 		_attract_cam.position = Vector3(3, 5, 14)
 		_attract.add_child(_attract_cam)
 		_attract_cam.current = true
+		if Look.high():
+			Look.dof(_attract_cam, 20.0)
 	elif not on and _attract:
 		_attract.queue_free()
 		_attract = null
@@ -671,6 +716,7 @@ func _process(dt: float) -> void:
 		if _conn_t > 4.0 and not Net.is_online():
 			_conn_msg.text = ("Waking up the online server...\nThe first game of the day can take up to a minute." if _conn_ip == "" else
 				"Still trying %s...\nOn the same Wi-Fi as the host? Use the host's Wi-Fi IP (starts with 192.168 or 10.)." % _conn_ip)
+	_check_performance(dt)
 	if _preview_holder.visible:
 		_preview.rotation.y = PI + sin(Time.get_ticks_msec() * 0.0007) * 0.6  # face the camera, sway a little
 		_preview.pose(dt, {dance = true})

@@ -39,7 +39,7 @@ static func theme() -> Theme:
 	t.set_stylebox("normal", "LineEdit", field)
 	t.set_stylebox("focus", "LineEdit", box(Color("1a0f3a"), YELLOW, 0))
 	t.set_font_size("font_size", "LineEdit", 24)
-	t.set_stylebox("panel", "PanelContainer", box(Color(NIGHT, 0.93), PINK, 8, 26))
+	t.set_stylebox("panel", "PanelContainer", box(Color(NIGHT, 0.72 if Look.high() else 0.93), PINK, 8, 26))
 	t.set_stylebox("panel", "PopupMenu", box(NIGHT, PINK, 0))
 	t.set_font_size("font_size", "PopupMenu", 22)
 	t.set_color("font_outline_color", "Label", INK)
@@ -139,8 +139,34 @@ static func label(parent: Node, text: String, size: int, col: Color, title := fa
 	return l
 
 
+static var _glass: ShaderMaterial
+
+
+static func glass() -> ShaderMaterial:
+	## High graphics: panels frost whatever is behind them.
+	if _glass == null:
+		var sh := Shader.new()
+		sh.code = """
+shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
+void fragment() {
+	vec4 c = COLOR;
+	if (c.a > 0.55 && c.a < 0.99) {  // the translucent body, not the border or the drop shadow
+		c.rgb = mix(textureLod(screen_tex, SCREEN_UV, 3.5).rgb, c.rgb, c.a);
+		c.a = 1.0;
+	}
+	COLOR = c;
+}
+"""
+		_glass = ShaderMaterial.new()
+		_glass.shader = sh
+	return _glass
+
+
 static func panel(parent: Node, title := "") -> VBoxContainer:
 	var p := PanelContainer.new()
+	if Look.high():
+		p.material = glass()
 	parent.add_child(p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)

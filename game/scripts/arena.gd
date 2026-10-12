@@ -20,6 +20,7 @@ uniform vec3 mark = vec3(0.2, 0.95, 1.0);
 uniform float glow = 2.5;
 uniform vec3 wood_a = vec3(0.78, 0.42, 0.16);
 uniform vec3 wood_b = vec3(0.95, 0.62, 0.30);
+uniform float coat = 0.0;  // high graphics: lacquered lanes
 varying vec3 lp;
 float h(float n) { return fract(sin(n * 91.7) * 43758.5); }
 void vertex() { lp = VERTEX; }
@@ -45,6 +46,9 @@ void fragment() {
 	EMISSION = mark * glow * (g + edge * 0.6);
 	ROUGHNESS = 0.07;
 	SPECULAR = 0.7;
+	CLEARCOAT = coat;
+	CLEARCOAT_ROUGHNESS = 0.05;
+	NORMAL_MAP = vec3(0.5 + (grain - 0.5) * 0.06 * coat, 0.5, 1.0);  // a hint of wood grain under the lacquer
 }
 """
 
@@ -96,6 +100,7 @@ var pitch: float
 var half_w: float
 var mask_front: float  # front face of the panel hanging over the pin decks
 
+var _beams: Array = []  # [SpotLight3D, phase]: sweeping disco beams (high graphics)
 var lanes: Array[Dictionary] = []
 var pins: Array[RigidBody3D] = []
 var screen_board: Control  # the overhead scoreboard lives in a SubViewport
@@ -355,6 +360,8 @@ func _environment() -> void:
 	env.fog_density = 0.008
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.15
+	if Look.high():
+		Look.dress_env(env, Color("c8b8ff"), 0.05)
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -364,6 +371,7 @@ func _environment() -> void:
 	sun.light_color = Color("c9b8ff")
 	sun.light_energy = 0.55
 	sun.shadow_enabled = true
+	sun.light_volumetric_fog_energy = 0.0  # indoors: the haze is lit by the stage lights only
 	add_child(sun)
 	for x in [-5.0, 0.0, 5.0]:  # warm house lights over the brawling floor
 		var l := OmniLight3D.new()
@@ -372,6 +380,7 @@ func _environment() -> void:
 		l.light_energy = 1.6
 		l.light_color = Color("ffe2c4")
 		l.shadow_enabled = x == 0.0
+		l.light_volumetric_fog_energy = 0.3
 		add_child(l)
 
 
@@ -409,6 +418,7 @@ func _lane(i: int) -> void:
 	for k in ["mark", "glow", "wood_a", "wood_b"]:
 		if style.has(k):
 			mat.set_shader_parameter(k, style[k])
+	mat.set_shader_parameter("coat", 1.0 if Look.high() else 0.0)
 	_solid(Vector3(lane_w, 0.4, lane_len), Vector3(x, -0.2, -lane_len * 0.5), mat, 0.06, "oil")
 	var gutter := Look.toy(Color("8c8ca6"), 0.2, false)
 	gutter.metallic = 0.8
@@ -520,7 +530,51 @@ func _decor() -> void:
 		n.position = Vector3(lane_x(i), 2.85, mask_front)
 		n.pixel_size = 0.006
 		add_child(n)
+	if Look.high():
+		_stage_lights()
 	Look.mesh(self, Look.box(Vector3(11.3, 3.8, 0.02)), Look.neon(Color("ff3fb4"), 1.0), Vector3(0, screen_y, mask_front + 0.01))
+
+
+func _stage_lights() -> void:
+	## High graphics: spotlit pin decks, sweeping disco beams and neon spill light, all catching the haze.
+	for i in lane_count:
+		var spot := SpotLight3D.new()
+		add_child(spot)
+		spot.look_at_from_position(Vector3(lane_x(i), 5.6, head_pin_z + 2.5), Vector3(lane_x(i), 0.0, head_pin_z - 1.0))
+		spot.spot_angle = 24.0
+		spot.spot_range = 9.0
+		spot.spot_attenuation = 0.3  # stage lights throw far; the default inverse-square fade leaves 3% at the floor
+		spot.light_energy = 2.5
+		spot.light_color = Color("fff1dc")
+		spot.light_volumetric_fog_energy = 4.0
+	var cols := [Color("ff3fb4"), Color("2de2ff"), Color("b04dff"), Color("ffe14d"), Color("3ddc97"), Color("ff8c2a")]
+	for k in cols.size():
+		var b := SpotLight3D.new()
+		b.position = Vector3((k % 3 - 1) * 5.0, 7.5, 6.0 if k < 3 else -6.0)
+		b.light_color = cols[k]
+		b.light_energy = 5.0
+		b.spot_range = 18.0
+		b.spot_angle = 14.0
+		b.spot_attenuation = 0.1
+		b.light_volumetric_fog_energy = 8.0
+		add_child(b)
+		_beams.append([b, k * 1.7])
+	for s in [-1.0, 1.0]:
+		for z in [-12.0, -5.0, 2.0, 8.0]:
+			var o := OmniLight3D.new()
+			o.position = Vector3(s * (half_w - 0.4), 2.4, z)
+			o.light_color = Color("ff3fb4") if s < 0 else Color("2de2ff")
+			o.light_energy = 1.0
+			o.omni_range = 5.0
+			o.light_volumetric_fog_energy = 0.5
+			add_child(o)
+
+
+func _process(_dt: float) -> void:
+	var t := Time.get_ticks_msec() * 0.001
+	for b in _beams:
+		var ph: float = b[1]
+		b[0].look_at(Vector3(sin(t * 0.45 + ph) * 7.0, 0.0, -4.0 + cos(t * 0.33 + ph * 1.3) * 9.0))
 
 
 func _furniture() -> void:
