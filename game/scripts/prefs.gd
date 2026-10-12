@@ -8,8 +8,9 @@ var skin := {}
 var music := 0.7
 var sfx := 0.9
 var fullscreen := false
-var graphics := "classic" if OS.has_feature("mobile") else "high"  # "high" = Look.high(); "classic" = the original look
-var graphics_checked := false  # first launch only: drop to classic if this PC can't keep up
+var graphics := "fast" if OS.has_feature("mobile") else "high"  # "high" | "classic" (the original look) | "fast" (phones)
+var graphics_checked := false
+var show_stats := false  # fps and ping in the corner of the match  # first launch only: drop to classic if this PC can't keep up
 var relay := ""  # custom online server URL; empty = Net.DEFAULT_RELAY
 var xp := 0
 var stats := {}  # lifetime totals: matches, wins, pins
@@ -30,6 +31,9 @@ func _ready() -> void:
 	fullscreen = cfg.get_value("video", "fullscreen", fullscreen)
 	graphics = cfg.get_value("video", "graphics", graphics)
 	graphics_checked = cfg.get_value("video", "graphics_checked", graphics_checked)
+	show_stats = cfg.get_value("video", "show_stats", show_stats)
+	if OS.has_feature("mobile") and not graphics_checked and graphics == "classic":
+		graphics = "fast"  # phones from before Fast existed
 	relay = cfg.get_value("online", "relay", relay)
 	xp = cfg.get_value("progress", "xp", xp)
 	stats = cfg.get_value("progress", "stats", stats)
@@ -43,8 +47,13 @@ func apply() -> void:
 	if DisplayServer.get_name() != "headless":
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED)
 	var high := graphics == "high"
-	get_viewport().msaa_3d = Viewport.MSAA_4X if high else Viewport.MSAA_2X
-	get_viewport().use_debanding = high
+	var fast := graphics == "fast"
+	var vp := get_viewport()
+	vp.msaa_3d = Viewport.MSAA_4X if high else (Viewport.MSAA_DISABLED if fast else Viewport.MSAA_2X)
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if fast else Viewport.SCREEN_SPACE_AA_DISABLED
+	vp.scaling_3d_scale = 0.7 if fast else 1.0  # the 3D renders at 70% and is scaled up; menus and HUD stay sharp
+	vp.use_debanding = high
+	RenderingServer.directional_shadow_atlas_set_size(2048 if fast else 4096, true)
 	var soft := RenderingServer.SHADOW_QUALITY_SOFT_HIGH if high else RenderingServer.SHADOW_QUALITY_SOFT_LOW
 	RenderingServer.directional_soft_shadow_filter_set_quality(soft)
 	RenderingServer.positional_soft_shadow_filter_set_quality(soft)
@@ -60,6 +69,7 @@ func save() -> void:
 	cfg.set_value("video", "fullscreen", fullscreen)
 	cfg.set_value("video", "graphics", graphics)
 	cfg.set_value("video", "graphics_checked", graphics_checked)
+	cfg.set_value("video", "show_stats", show_stats)
 	cfg.set_value("online", "relay", relay)
 	cfg.set_value("progress", "xp", xp)
 	cfg.set_value("progress", "stats", stats)

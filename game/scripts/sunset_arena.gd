@@ -14,6 +14,7 @@ const BULB := Color("ffcf7a")
 const SKY_SHADER := """
 shader_type sky;
 uniform vec3 sun_dir = vec3(-0.3, 0.035, -0.95);
+uniform bool clouds = true;  // off on Fast graphics: the noise is the costly part
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) {
 	vec2 i = floor(p);
@@ -30,7 +31,7 @@ void sky() {
 	col = mix(col, vec3(0.36, 0.2, 0.34), smoothstep(0.0, -0.12, y));  // haze below the horizon
 	float s = max(dot(d, normalize(sun_dir)), 0.0);
 	col += vec3(1.0, 0.55, 0.25) * (pow(s, 6.0) * 0.4 + pow(s, 48.0) * 0.7);
-	if (y > 0.0) {  // long streaky clouds, lit pink and gold toward the sun
+	if (clouds && y > 0.0) {  // long streaky clouds, lit pink and gold toward the sun
 		vec2 uv = d.xz / (y + 0.06);
 		float n = noise(uv * vec2(0.35, 1.6)) * 0.65 + noise(uv * vec2(0.9, 4.0)) * 0.35;
 		float c = smoothstep(0.55, 0.78, n) * smoothstep(0.01, 0.06, y) * (1.0 - smoothstep(0.3, 0.6, y));
@@ -109,6 +110,7 @@ func _init() -> void:
 func _environment() -> void:
 	var sky := Sky.new()
 	sky.sky_material = _shader(SKY_SHADER)
+	sky.sky_material.set_shader_parameter("clouds", not Look.fast())
 	sky.radiance_size = Sky.RADIANCE_SIZE_128
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
@@ -118,7 +120,7 @@ func _environment() -> void:
 	env.ambient_light_energy = 0.35
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED  # the bright sky washed out the glossy lanes
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.glow_enabled = true
+	env.glow_enabled = not Look.fast()  # a soft extra here (unlike the neon alley), and 20% of a phone frame
 	env.glow_intensity = 0.7
 	env.glow_bloom = 0.05
 	env.glow_hdr_threshold = 1.0
@@ -143,13 +145,19 @@ func _environment() -> void:
 	sun.light_color = Color("ffb36b")
 	sun.light_energy = 1.3
 	sun.shadow_enabled = true
+	if Look.fast():
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+		sun.directional_shadow_max_distance = 45.0
 	sun.light_volumetric_fog_energy = 0.8  # sun shafts through the palms (high graphics haze)
 	add_child(sun)
-	var fill := DirectionalLight3D.new()  # cool evening sky fill from behind the camera
-	fill.rotation_degrees = Vector3(-45, 20, 0)
-	fill.light_color = Color("b9b0ff")
-	fill.light_energy = 0.35
-	add_child(fill)
+	if Look.fast():  # a second directional light makes the phone renderer draw everything twice
+		env.ambient_light_energy += 0.15
+	else:
+		var fill := DirectionalLight3D.new()  # cool evening sky fill from behind the camera
+		fill.rotation_degrees = Vector3(-45, 20, 0)
+		fill.light_color = Color("b9b0ff")
+		fill.light_energy = 0.35
+		add_child(fill)
 	for x in [-5.0, 0.0, 5.0]:
 		var l := OmniLight3D.new()
 		l.position = Vector3(x, 5.0, 5.5)

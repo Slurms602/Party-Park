@@ -127,6 +127,11 @@ func setup(is_server: bool) -> void:
 		_lane(i)
 	_furniture()
 	_decor()
+	if Look.fast():  # shadows only from what you play with: decoration stops casting (it was a third of the frame)
+		var keep := []
+		for p: RigidBody3D in pins:
+			keep.append_array(p.find_children("*", "GeometryInstance3D", true, false))
+		Look.no_shadow(self, keep)
 
 
 func flash_foul() -> void:
@@ -375,6 +380,9 @@ func _environment() -> void:
 	sun.light_color = Color("c9b8ff")
 	sun.light_energy = 0.55
 	sun.shadow_enabled = true
+	if Look.fast():  # one cascade instead of four: casters are drawn once for the shadow, not up to four times
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+		sun.directional_shadow_max_distance = 45.0
 	sun.light_volumetric_fog_energy = 0.0  # indoors: the haze is lit by the stage lights only
 	add_child(sun)
 	for x in [-5.0, 0.0, 5.0]:  # warm house lights over the brawling floor
@@ -383,7 +391,7 @@ func _environment() -> void:
 		l.omni_range = 13.0
 		l.light_energy = 1.6
 		l.light_color = Color("ffe2c4")
-		l.shadow_enabled = x == 0.0
+		l.shadow_enabled = x == 0.0 and not Look.fast()
 		l.light_volumetric_fog_energy = 0.3
 		add_child(l)
 
@@ -592,8 +600,10 @@ func _furniture() -> void:
 	var vp := SubViewport.new()
 	vp.size = Vector2i(1600, 520)
 	vp.transparent_bg = false
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	add_child(vp)
 	screen_board = Scoreboard.new()
+	screen_board.draw.connect(func(): vp.render_target_update_mode = SubViewport.UPDATE_ONCE)  # re-render only when it changes
 	screen_board.big = true
 	screen_board.set_anchors_preset(Control.PRESET_FULL_RECT)
 	vp.add_child(screen_board)

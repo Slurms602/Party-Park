@@ -359,6 +359,11 @@ func build(c: Color, s: Dictionary) -> void:
 		_arms.append(arm)
 		_fists.append(_glove(side))
 		_feet.append(_shoe(side))
+	# Shadows: on Fast only the body casts one; otherwise everything but the little face parts does.
+	var keep := [body]
+	if not Look.fast():
+		keep = find_children("*", "GeometryInstance3D", true, false).filter(func(g): return g is MeshInstance3D and g.get_aabb().get_longest_axis_size() * g.scale.length() > 0.45)
+	Look.no_shadow(self, keep)
 
 
 # ------------------------------------------------------------------ parts

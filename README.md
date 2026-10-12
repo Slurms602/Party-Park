@@ -107,7 +107,15 @@ get the scoring ones twice as often.
 
 ### Graphics
 
-**SETTINGS → HIGH-END GRAPHICS** (on by default on PC, off on phones). It adds:
+**Settings → Graphics** has three levels: **High** (the PC default), **Classic** (the original look) and **Fast**
+(the phone default). Fast renders the 3D at 70% resolution with FXAA (menus stay sharp), uses one shadow cascade,
+only lets bowlers and pins cast shadows, keeps outlines on bodies only, and on Sunset Lanes drops the second
+directional light, the glow and the cloud layer. In `tests/render_bench.gd` it cuts GPU time by about 60% on both
+maps. On first launch a PC watches the menu for a few seconds and drops to Classic under 35 fps, Fast under 25.
+
+**Show FPS and ping** (Settings) puts both under the match clock: low fps means the device, high ping the connection.
+
+High adds:
 - volumetric haze that catches the light: sweeping disco beams and spotlit pin decks in Cosmic Lanes, sun haze
   on Sunset Lanes;
 - bounce light (SSIL), softer shadows, lacquered lanes and glossy vinyl bowlers;
@@ -120,7 +128,10 @@ get the scoring ones twice as often.
 - furnished maps with Kenney's CC0 props: an arcade corner, lounge, ball racks and a snack bar in Cosmic Lanes; a
   rooftop bar, parasols, loungers and a real city skyline in Sunset Lanes.
 
-Off, the 3D looks exactly like the original Classic look (the menus are the same either way). On first launch the game watches the menu for a few
+Classic keeps the original 3D look (the menus are the same at every level).
+
+On phones the camera sits closer, PUNCH relabels itself (BOWL!, THROW, BONK), GRAB pulses when a knocked-out
+player is in reach, and aim is a little more forgiving (punch targeting, grab reach, bowl assist). On first launch the game watches the menu for a few
 seconds and switches itself to Classic if it runs under 35 fps.
 
 ### Levels, trophies and unlocks
@@ -170,10 +181,11 @@ game/
   tests/strike_rate.gd  bowls randomized human-ish throws on every map and compares strike rates
   tests/test_powerups.gd  item boxes and every power-up
   tests/test_progress.gd  levels, locks, achievements and unlocks
+  tests/render_bench.gd draw calls and GPU time per graphics level and map (run with --rendering-method mobile)
 ```
 
-The host runs all physics and sends snapshots at 30 Hz. Clients send input and draw about 100 ms behind,
-interpolating between snapshots.
+The host runs all physics (on its own thread) and sends snapshots at 30 Hz. Clients send input and draw just far
+enough behind to ride out their connection's jitter (55–150 ms, adaptive), interpolating between snapshots.
 
 ```bash
 godot --headless --path game -s tests/test_bowling.gd                       # core-loop test

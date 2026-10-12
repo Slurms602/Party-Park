@@ -4,7 +4,7 @@ extends Node3D
 ## Clients send input and draw snapshots about 100 ms behind, interpolating between them.
 
 const SNAP_INTERVAL := 1.0 / 30.0
-const INTERP_DELAY := 0.1
+const INTERP_DELAY := 0.1  # where the adaptive delay starts; see _snap
 const STRIKE_BONUS := 10
 const SPARE_BONUS := 5
 const FLATTEN_POINTS := 2
@@ -28,6 +28,12 @@ var _snap_acc := 0.0
 var _snaps: Array = []  # client: [time, beasts, time_left]
 var _pin_snaps: Array = []  # client: [time, half-float pin transforms]
 var _clock := 0.0
+var _delay := INTERP_DELAY  # how far behind the host clients draw: just enough to ride out this connection's jitter
+var _jitter := 0.02
+var _last_arrival := 0.0
+var _rtt := -1  # ping to the host in ms (clients), -1 until measured
+var _stats_t := 0.0
+var _touch := false
 var _shake := 0.0
 var _follow: Beast = null
 var _follow_t := 0.0
@@ -65,7 +71,8 @@ func _ready() -> void:
 		Look.dof(cam, 32.0)
 	hud = Hud.new()
 	add_child(hud)
-	if OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args():
+	_touch = OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args()
+	if _touch:
 		var tc := TouchControls.new()
 		tc.me_id = Net.my_id()
 		add_child(tc)
@@ -143,7 +150,7 @@ func _physics_process(dt: float) -> void:
 func _send_local_input() -> void:
 	var mv := Input.get_vector("left", "right", "up", "down")
 	var bits := int(Input.is_action_pressed("jump")) | int(Input.is_action_pressed("punch")) << 1 \
-		| int(Input.is_action_pressed("grab")) << 2 | int(Input.is_action_pressed("dive")) << 3
+		| int(Input.is_action_pressed("grab")) << 2 | int(Input.is_action_pressed("dive")) << 3 | int(_touch) << 4
 	if hud.paused:
 		mv = Vector2.ZERO
 		bits = 0
@@ -158,7 +165,8 @@ func _client_input(mv: Vector2, bits: int) -> void:
 	var pid := multiplayer.get_remote_sender_id()
 	if pid == 0:
 		pid = 1
-	inputs[pid] = {move = mv.limit_length(1.0), jump = bits & 1 != 0, punch = bits & 2 != 0, grab = bits & 4 != 0, dive = bits & 8 != 0}
+	inputs[pid] = {move = mv.limit_length(1.0), jump = bits & 1 != 0, punch = bits & 2 != 0, grab = bits & 4 != 0, dive = bits & 8 != 0,
+		assist = bits & 16 != 0}  # a touch screen: aim a little more forgiving
 
 
 func _on_roll(lane: int, bowler: int, knocked: int, kind: String) -> void:
@@ -273,8 +281,37 @@ func _hello() -> void:
 @rpc("authority", "unreliable_ordered")
 func _snap(t: float, bs: Array, tl: float, p: float, items: Array) -> void:
 	_snaps.append([t, bs, tl, p, items])
+	var now := Time.get_ticks_msec() * 0.001
+	if _last_arrival > 0.0:
+		_jitter = lerpf(_jitter, absf(now - _last_arrival - SNAP_INTERVAL), 0.05)
+	_last_arrival = now
+	_delay = clampf(SNAP_INTERVAL * 1.6 + _jitter * 3.0, 0.055, 0.15)
 	if _snaps.size() > 30:
 		_snaps.pop_front()
+
+
+@rpc("any_peer", "unreliable")
+func _ping(t: int) -> void:
+	_pong.rpc_id(multiplayer.get_remote_sender_id(), t)
+
+
+@rpc("authority", "unreliable")
+func _pong(t: int) -> void:
+	var rtt := Time.get_ticks_msec() - t
+	_rtt = rtt if _rtt < 0 else roundi(lerpf(_rtt, rtt, 0.3))
+
+
+func _update_stats(dt: float) -> void:
+	## Settings > Show FPS and ping: says whether a laggy game is the device (fps) or the connection (ping).
+	_stats_t -= dt
+	if _stats_t > 0.0:
+		return
+	_stats_t = 0.5
+	if not server and Net.is_online():
+		_ping.rpc_id(1, Time.get_ticks_msec())
+	if Prefs.show_stats:
+		var net := "host" if server else ("%d ms ping" % _rtt if _rtt >= 0 else "measuring ping")
+		hud.set_stats("%d fps  ·  %s" % [Engine.get_frames_per_second(), net])
 
 
 @rpc("authority", "call_remote", "unreliable_ordered", 1)
@@ -364,6 +401,7 @@ func _burst(pos: Vector3, col: Color, amount: int, speed: float, sparks := false
 	p.gravity = Vector3(0, -9.8, 0)
 	p.scale_amount_min = 0.6
 	p.scale_amount_max = 1.4
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(p)
 	p.global_position = pos
 	p.emitting = true
@@ -389,6 +427,7 @@ func _ev_hit(victim: int, by: int, dir: Vector3, power: float, label: String) ->
 func _popup(pos: Vector3, text: String, col: Color) -> void:
 	var l := Label3D.new()
 	l.text = text
+	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.no_depth_test = true
 	l.font_size = 80
@@ -510,12 +549,14 @@ func _process(dt: float) -> void:
 		hud.set_prompts(_touchify(_prompts(me)))
 	hud.set_box_marks(_box_marks())
 	hud.set_time(time_left if pre <= 0.0 else Net.match_seconds)
-	arena.screen_board.time_left = time_left
-	arena.screen_board.queue_redraw()
+	if ceili(time_left) != ceili(arena.screen_board.time_left):  # the alley screen only changes once a second
+		arena.screen_board.time_left = time_left
+		arena.screen_board.queue_redraw()
 	_update_camera(dt, me)
 
 
 func _match_flow(dt: float) -> void:
+	_update_stats(dt)
 	## Countdown, hurry-up and music cues, run on every peer from the replicated clock.
 	var p := int(ceil(pre))
 	if p != _pre_shown:
@@ -572,13 +613,15 @@ func _box_marks() -> Array:
 		var sp := cam.unproject_position(p)
 		if cam.is_position_behind(p) or sp.y > vs.y - 30.0:
 			var ahead := Vector3(p.x, p.y, cam.global_position.z - 8.0)  # same x, in front of the camera
-			out.append(Vector2(clampf(cam.unproject_position(ahead).x, 60.0, vs.x - 60.0), vs.y - 165.0))  # above the prompts
+			var lo := 340.0 if _touch else 60.0  # phones: keep clear of the stick and the buttons
+			var hi := vs.x - (480.0 if _touch else 60.0)
+			out.append(Vector2(clampf(cam.unproject_position(ahead).x, lo, hi), vs.y - 165.0))  # above the prompts
 	return out if pre <= 0.0 and not over else []
 
 
 func _touchify(items: Array) -> Array:
 	## Same prompts, phrased for the on-screen buttons.
-	if not (OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args()):
+	if not _touch:
 		return items
 	var names := {"LMB": "PUNCH", "HOLD LMB": "HOLD PUNCH", "RMB": "TAP GRAB", "HOLD RMB": "TAP GRAB", "SHIFT": "DIVE", "RELEASE": "LET GO"}
 	return items.map(func(it): return [names.get(it[0], it[0])] + it.slice(1))
@@ -588,7 +631,7 @@ func _interpolate(dt: float) -> void:
 	if _snaps.is_empty():
 		return
 	_clock += dt
-	var target: float = _snaps[-1][0] - INTERP_DELAY
+	var target: float = _snaps[-1][0] - _delay
 	_clock = target if absf(_clock - target) > 0.25 else lerpf(_clock, target, 0.05)
 	var s := _bracket(_snaps)
 	var a: Array = s[0]
@@ -655,7 +698,7 @@ func _update_camera(dt: float, me: Beast) -> void:
 	elif me:
 		focus = me.global_position
 	# Low and behind, looking down the lanes so you can always see the pins.
-	var want := focus + Vector3(0, 6.5, 9.0)
+	var want := focus + Vector3(0, 6.5, 9.0) * (0.8 if _touch else 1.0)  # phones: closer, so bowlers aren't specks
 	want.x = clampf(want.x, -arena.half_w + 3.5, arena.half_w - 3.5)  # don't peek outside the alley
 	cam.global_position = cam.global_position.lerp(want, 1.0 - exp(-dt * (2.5 if _follow else 5.0)))
 	cam.look_at(cam.global_position + arena.cam_look.normalized())

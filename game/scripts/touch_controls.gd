@@ -89,18 +89,36 @@ func _set_grab(on: bool) -> void:
 
 
 func _process(dt: float) -> void:
-	if not _grab_on:
-		return
 	var me: Beast = null
 	for b: Beast in get_tree().get_nodes_in_group("beasts"):
 		if b.pid == me_id:
 			me = b
+	_contextual(me)
+	if not _grab_on:
+		return
 	var holding := me != null and (me.holding != null or me.net_holding)
 	_grab_t += dt
 	# Let go once whatever we held is gone (bowled, thrown, knocked loose), or if we grabbed nothing.
 	if (_was_holding and not holding) or (not holding and _grab_t > 2.0) or (me and me.state >= Beast.BALL):
 		_set_grab(false)
 	_was_holding = _was_holding or holding
+
+
+func _contextual(me: Beast) -> void:
+	## PUNCH says what it will do right now, and GRAB pulses when a knocked-out player is in reach.
+	if me == null:
+		return
+	var carrying: bool = me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED)
+	var punch_label: Label = _buttons[0].get_child(0)
+	punch_label.text = "BOWL!" if carrying else {ball = "THROW", giant_pin = "BONK"}.get(me.item, "PUNCH")
+	if _grab_on:
+		return
+	var near := false
+	for b: Beast in get_tree().get_nodes_in_group("beasts"):
+		if b != me and b.state == Beast.BALL and me.state < Beast.BALL and b.global_position.distance_to(me.global_position) < 2.6:
+			near = true
+	var pulse := 1.0 + 0.6 * absf(sin(Time.get_ticks_msec() * 0.008))
+	_buttons[1].modulate = Color(pulse, pulse, pulse) if near else Color.WHITE
 
 
 func _input(e: InputEvent) -> void:

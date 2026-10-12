@@ -28,9 +28,27 @@ void fragment() {
 
 
 static func high() -> bool:
-	## High graphics (Settings). Looked up at runtime so this class also compiles in headless tests.
+	## High graphics (Settings): haze, modelled cosmetics, props, filmic finish.
+	return _graphics() == "high"
+
+
+static func fast() -> bool:
+	## Fast graphics (the phone default): lower 3D resolution, one shadow cascade, outlines on bodies only.
+	return _graphics() == "fast"
+
+
+static func _graphics() -> String:
+	# Looked up at runtime so this class also compiles in headless tests.
 	var prefs := (Engine.get_main_loop() as SceneTree).root.get_node_or_null("Prefs")
-	return prefs != null and prefs.graphics == "high"
+	return prefs.graphics if prefs else "classic"
+
+
+static func no_shadow(root: Node, keep: Array = []) -> void:
+	## Stop everything under root casting shadows (except `keep`): little parts and overlays don't need them,
+	## and every caster is drawn again for each shadow cascade.
+	for g: GeometryInstance3D in root.find_children("*", "GeometryInstance3D", true, false):
+		if not keep.has(g):
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 static func post_layer() -> CanvasLayer:
@@ -115,7 +133,7 @@ static func toy(color: Color, roughness := 0.35, with_outline := true) -> Standa
 		m.clearcoat_enabled = true
 		m.clearcoat = 0.5
 		m.clearcoat_roughness = 0.15
-	if with_outline:
+	if with_outline and not fast():  # each outline is a second draw; on Fast only the bodies keep theirs
 		m.next_pass = outline()
 	return m
 

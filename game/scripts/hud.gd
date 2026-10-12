@@ -28,6 +28,7 @@ var _flash: ColorRect
 var _confetti: CPUParticles2D
 var _last_clock := -1
 var _card_style: StyleBoxFlat
+var _stats: Label
 
 
 class Burst extends Control:
@@ -158,6 +159,11 @@ func _ready() -> void:
 	_charge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_charge.visible = false
 	_root.add_child(_charge)
+	_stats = UI.hero(_root, "", 18)  # under the clock: phones have their buttons in the bottom corners
+	_stats.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_stats.offset_top = 108
+	_stats.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_boxes = BoxMarks.new()
 	_boxes.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_boxes)
@@ -262,6 +268,10 @@ func set_me(player_name: String, col: Color, health: float, balled: bool, ko_lef
 	fill.bg_color = UI.RED if health < 25 else (UI.MUSTARD if health < 55 else UI.TEAL)
 	_status.text = "Knocked out  ·  %.1fs" % ko_left if balled else ("Woozy!" if health < 25 else "Ready to brawl")
 	_status.add_theme_color_override("font_color", Color(UI.NAVY, 0.7))
+
+
+func set_stats(text: String) -> void:
+	_stats.text = text
 
 
 func set_box_marks(pts: Array) -> void:

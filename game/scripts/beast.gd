@@ -68,6 +68,7 @@ var hold_time := 0.0
 var bot_mem := {}
 var _punch_hand := 0
 var _prev := {}
+var _assist := false  # this player is on a touch screen (input flag): wider aim help
 var _dive_hits := []
 var _grounded := false
 var _on_oil := false
@@ -164,6 +165,7 @@ func sim(inp: Dictionary, dt: float) -> void:
 		DIVE: _sim_dive(dt)
 		BALL, CARRIED: _sim_ball(inp, dt)
 	_prev = inp
+	_assist = inp.get("assist", false)
 	if global_position.z < -arena.lane_len and global_position.y < Arena.PIT_Y + 1.0 and state != CARRIED:
 		_respawn(arena.ball_return_point(global_position.x), Vector3(0, 3.0, 3.5))  # out of the pit via the ball return
 	elif global_position.y < -12.0 or absf(global_position.x) > 30.0 or absf(global_position.z) > 40.0:
@@ -271,7 +273,7 @@ func _start_attack(heavy: bool, power: float) -> void:
 	punch_t[_punch_hand] = PUNCH_TIME
 	_punch_hand = 1 - _punch_hand
 	var gap := 0.0
-	var target := _nearest(2.8, 0.35)  # aim assist, like Gang Beasts' TargetingHandeler
+	var target := _nearest(3.6, 0.0) if _assist else _nearest(2.8, 0.35)  # aim assist, like Gang Beasts' TargetingHandeler
 	if target:
 		var to := (target.global_position - global_position) * Vector3(1, 0, 1)
 		facing = atan2(-to.x, -to.z)
@@ -452,7 +454,7 @@ func _on_body_entered(other: Node) -> void:
 func _try_grab() -> void:
 	var best: Node3D = null
 	var best_score := INF
-	for body in _overlap(global_position + _forward() * 0.85, 0.75):
+	for body in _overlap(global_position + _forward() * 0.85, 1.05 if _assist else 0.75):
 		var score: float = body.global_position.distance_to(global_position)
 		if body is Beast:
 			if body.state == CARRIED or body.held_by != null or (body.state <= DIVE and body.immune > 0.0):
@@ -536,7 +538,7 @@ func _bowl(power: float) -> void:
 	var lane := arena.lane_at(global_position.x)
 	if lane >= 0 and f.z < -0.6:  # gentle assist toward the lane's head pin
 		var aim := Vector3(arena.lane_x(lane), 0.0, arena.head_pin_z) - global_position
-		f = f.lerp(Vector3(aim.x, 0.0, aim.z).normalized(), arena.aim_assist).normalized()
+		f = f.lerp(Vector3(aim.x, 0.0, aim.z).normalized(), minf(arena.aim_assist + (0.25 if _assist else 0.0), 0.8)).normalized()
 	var v := f * lerpf(8.0, 17.0, power)
 	release_hold(v - linear_velocity * 0.7)
 	ball.global_position = Vector3(global_position.x, global_position.y - 0.2, global_position.z) + f * 1.0
@@ -767,6 +769,7 @@ func _build_visuals() -> void:
 	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	gm.albedo_color = Color(1.0, 0.8, 0.2, 0.25)
 	_gold = Look.mesh(_overlay, Look.sphere(0.8), gm)
+	Look.no_shadow(_overlay, [] if Look.fast() else _held_ball.find_children("*", "GeometryInstance3D", true, false) + [_giant_pin])  # labels, bars, stars...
 	_last_pos = global_position
 
 

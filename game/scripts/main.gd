@@ -23,11 +23,15 @@ var _browse := {}  # slot -> a locked option being previewed (never saved to you
 var _lock_hint: Label
 var _level_label: Label
 var _trophies: VBoxContainer
+const GRAPHICS := {high = "High", classic = "Classic", fast = "Fast (phones)"}
+
 var _post: CanvasLayer
+var _bench := Vector4.ZERO  # test hook: frames, seconds, slowest frame, summed process+physics CPU ms (after a warm-up)
+var _bench_draws := 0.0
 var _menu_map := ""  # the map playing behind the menu, picked once per session so the menu's palette stays put
 var _backdrop: MenuArt.Backdrop
 var _tabs: Array[Button] = []
-var _gfx: CheckButton
+var _gfx: OptionButton
 var _perf := Vector3.ZERO  # first-launch frame-rate check: seconds watched, frames counted, seconds counted
 var _args := {}
 var _logo_node: Control
@@ -551,26 +555,39 @@ func _build_settings(stack: Control) -> void:
 		Prefs.fullscreen = on
 		Prefs.apply())
 	v.add_child(fs)
-	_gfx = CheckButton.new()
-	_gfx.text = "High-end graphics"
-	_gfx.button_pressed = Prefs.graphics == "high"
-	_gfx.toggled.connect(_set_graphics)
-	v.add_child(_gfx)
-	UI.label(v, "Turn high-end graphics off if the game feels slow.", 17, Color(UI.NAVY, 0.55))
+	var gfx_row := HBoxContainer.new()
+	gfx_row.add_theme_constant_override("separation", 14)
+	v.add_child(gfx_row)
+	UI.label(gfx_row, "Graphics", 20, Color(UI.NAVY, 0.65)).size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_gfx = OptionButton.new()
+	for g in GRAPHICS:
+		_gfx.add_item(GRAPHICS[g])
+	_gfx.select(GRAPHICS.keys().find(Prefs.graphics))
+	_gfx.custom_minimum_size = Vector2(300, 60)
+	_gfx.item_selected.connect(func(i): _set_graphics(GRAPHICS.keys()[i]))
+	gfx_row.add_child(_gfx)
+	var stats := CheckButton.new()
+	stats.text = "Show FPS and ping in matches"
+	stats.button_pressed = Prefs.show_stats
+	stats.toggled.connect(func(on):
+		Prefs.show_stats = on
+		Prefs.save())
+	v.add_child(stats)
+	UI.label(v, "Game feels slow? Pick Fast (it's the phone default).", 17, Color(UI.NAVY, 0.55))
 	UI.button(v, "Back", func():
 		Prefs.save()
 		_show("lobby" if Net.is_online() else "main"), 200)
 
 
-func _set_graphics(on: bool) -> void:
-	Prefs.graphics = "high" if on else "classic"
+func _set_graphics(level: String) -> void:
+	Prefs.graphics = level
 	Prefs.graphics_checked = true  # the player chose: never second-guess it
 	Prefs.apply()
 	Prefs.save()
 	Arena._pin_mat = null  # cached materials are rebuilt with the new look
 	Powerups._ball_mesh = null
-	_post.visible = on
-	_gfx.set_pressed_no_signal(on)
+	_post.visible = level == "high"
+	_gfx.select(GRAPHICS.keys().find(level))
 	if _game == null:
 		_show_attract(false)
 		_show_attract(true)
@@ -587,8 +604,8 @@ func _check_performance(dt: float) -> void:
 	if _perf.x > 9.0:
 		var fps := _perf.y / _perf.z
 		if fps < 35.0:
-			_set_graphics(false)
-			_toast("Switched to Classic graphics so the game runs smoothly (%d fps). Change it in SETTINGS." % fps)
+			_set_graphics("fast" if fps < 25.0 else "classic")
+			_toast("Switched to %s graphics so the game runs smoothly (%d fps). Change it in Settings." % [GRAPHICS[Prefs.graphics], fps])
 		else:
 			Prefs.graphics_checked = true
 			Prefs.save()
@@ -747,6 +764,10 @@ func _physics_process(dt: float) -> void:
 
 
 func _process(dt: float) -> void:
+	if _game and _game.pre <= 0.0:
+		_bench += Vector4(1.0, dt, 0.0, (Performance.get_monitor(Performance.TIME_PROCESS) + Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)) * 1000.0)
+		_bench.z = maxf(_bench.z, dt)
+		_bench_draws += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	if _screens.connecting.visible:
 		_conn_t += dt
 		if _conn_t > 4.0 and not Net.is_online():
@@ -863,10 +884,15 @@ func _report() -> void:
 	var out := {online = Net.is_online(), players = Net.players.size(), in_match = _game != null, room = Net.room_code, status = _status.text,
 		ms_process = snappedf(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, 0.01),
 		ms_physics = snappedf(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0, 0.01),
-		fps = Performance.get_monitor(Performance.TIME_FPS), nodes = Performance.get_monitor(Performance.OBJECT_NODE_COUNT)}
+		fps = Performance.get_monitor(Performance.TIME_FPS), nodes = Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+		avg_frame_ms = snappedf(_bench.y / maxf(_bench.x, 1.0) * 1000.0, 0.1), worst_frame_ms = snappedf(_bench.z * 1000.0, 0.1),
+		avg_cpu_ms = snappedf(_bench.w / maxf(_bench.x, 1.0), 0.01), avg_draws = roundi(_bench_draws / maxf(_bench.x, 1.0)), draw_calls = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		objects = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)}
 	if _game:
 		out.time_left = snappedf(_game.time_left, 0.1)
 		out.scores = _game.scores
 		out.snapshots = _game._snaps.size()
+		out.ping_ms = _game._rtt
+		out.interp_ms = roundi(_game._delay * 1000.0)
 		out.beast_states = _game.beasts.values().map(func(b): return [b.display_name, b.state, snappedf(b.health, 1), b.global_position.snapped(Vector3(0.1, 0.1, 0.1)), b.skin.hat])
 	print("REPORT ", JSON.stringify(out, "", false))

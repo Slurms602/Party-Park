@@ -32,6 +32,7 @@ func _run() -> void:
 	tc._set_grab(true)  # tap GRAB once
 	await _drive(me, friend, arena, 5)
 	_check(me.holding == friend, "tapping GRAB picks the ball up")
+	_check(tc._buttons[0].get_child(0).text == "BOWL!", "PUNCH turns into BOWL! while carrying")
 	Input.action_press("punch")  # same thumb moves to PUNCH and holds it
 	await _drive(me, friend, arena, 50)
 	_check(me.holding == friend and me.charging, "still carrying while winding up (no thumb on GRAB)")
@@ -54,11 +55,11 @@ func _beast(world: Node3D, arena: Arena, id: int, pos: Vector3) -> Beast:
 
 func _drive(me: Beast, other: Beast, arena: Arena, frames: int) -> void:
 	for f in frames:
+		await process_frame  # lets TouchControls._process watch what we're holding
+		await physics_frame  # then step inside the physics frame, like the game (physics runs on its own thread)
 		me.sim({grab = Input.is_action_pressed("grab"), punch = Input.is_action_pressed("punch")}, DT)
 		other.sim({}, DT)
 		arena.server_update(DT, [me, other])
-		await physics_frame
-		await process_frame  # lets TouchControls._process watch what we're holding
 
 
 func _check(ok: bool, what: String) -> void:
