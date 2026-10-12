@@ -13,7 +13,8 @@ from each game and why.
 
 1. Install [Godot 4.7](https://godotengine.org/download) (standard build, no .NET needed).
 2. Open `game/project.godot` and press **Play** (F5).
-3. **HOST GAME** gives you a 4-letter **room code**. Add bots with **+ BOT** if you like, then **START MATCH**.
+3. **HOST GAME** gives you a 4-letter **room code**. Add bots with **+ BOT** if you like, pick **Party** or
+   **Quick match**, then start.
 4. Friends click **JOIN GAME** and type the code. Nobody needs to port forward. Friends on the same Wi-Fi don't even
    need the code: your game shows up in their list.
 
@@ -78,6 +79,17 @@ offer to download the export templates the first time.
 - Leftover pins stay up for 12 s, so you can go for the spare. Then the pinsetter re-racks the lane.
 - Bowled players come back out of the ball return with 2 s of immunity.
 - Pick up a pin with Grab and Punch to swing it as a club.
+
+### Party mode
+
+A Mario Party-style board game. Everyone **rolls at the same time** (dice 1–10) and hops around the island's loop of
+24 spaces: blue +3 coins, red −3, green "?" a lucky bonus. Pass the **star** with 20 coins and you buy it, then it
+moves. After every round a random **sports minigame** pays coins by finishing place (10, 7, 5, 3, 2, 1...).
+After 5, 8 or 12 rounds, most stars wins (coins break ties). A whole party counts as one match for XP and trophies.
+
+Minigames so far: **Cosmic Bowling** and **Sunset Bowling** (75-second versions of the main game) and **Sumo Ring**
+(knock everyone off a floating ring; everyone still standing scores when someone goes over, last one standing +3).
+**Quick match** plays a single game on the map you pick, as before.
 
 ### Maps
 
@@ -169,6 +181,9 @@ game/
   scripts/ui.gd         UI kit (theme, bouncy buttons, panels); prefs.gd saved profile; music.gd music player
   scripts/arena.gd      alley geometry and shaders, pins, roll detection, re-racks (Cosmic Lanes)
   scripts/sunset_arena.gd  Sunset Lanes: extends Arena with its own sizes and look
+  scripts/sumo_ring.gd  Sumo Ring minigame: an Arena with no lanes and a ring to fall off
+  scripts/party.gd      party rules (rolls, moves, coins, the star, payouts) on a plain Dictionary
+  scripts/board.gd      the party board: island, spaces, pieces, its screen, and the host's clock
   scripts/powerups.gd   item boxes, the power-up table, thrown bowling balls
   scripts/progress.gd   XP, levels, achievements and which cosmetics they unlock
   scripts/bot.gd        bots (host-side; they send the same input as a human)
@@ -181,6 +196,7 @@ game/
   tests/strike_rate.gd  bowls randomized human-ish throws on every map and compares strike rates
   tests/test_powerups.gd  item boxes and every power-up
   tests/test_progress.gd  levels, locks, achievements and unlocks
+  tests/test_party.gd   party rules
   tests/render_bench.gd draw calls and GPU time per graphics level and map (run with --rendering-method mobile)
 ```
 
@@ -192,6 +208,8 @@ godot --headless --path game -s tests/test_bowling.gd                       # co
 godot --headless --path game -s tests/strike_rate.gd                        # map difficulty check (~1 min)
 godot --headless --path game -s tests/test_powerups.gd                      # power-ups
 godot --headless --path game -s tests/test_progress.gd                      # progression
+godot --headless --path game -s tests/test_party.gd                         # party rules
+godot --headless --path game -- --host --bots=3 --party=2 --timescale=3 --quit-after=80   # a whole party with bots
 godot --headless --path game -- --host --bots=5 --autostart --timescale=3 --quit-after=30   # bot match, prints REPORT (--map=sunset)
 godot --path game -- --join=127.0.0.1 --name=Friend                         # second instance as a client
 python3 tools/make_music.py                                                 # re-render the music (numpy + oggenc)

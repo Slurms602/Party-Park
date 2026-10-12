@@ -6,6 +6,7 @@ extends Control
 const MARK_COLORS := {"X": Color("ffe14d"), "/": Color("2de2ff"), "-": Color(1, 1, 1, 0.4), "F": Color("ff3b4e")}
 
 var big := false
+var show_frames := true  # bowling frames; minigames without them just list totals
 var rows: Array = []  # [{name, color, total, rolls: Array[String], me}], sorted best first
 var time_left := 0.0
 var _flash := ""
@@ -47,7 +48,7 @@ func _draw() -> void:
 	var ink := Color.WHITE if big else UI.NAVY
 	var w := size.x
 	var h := size.y
-	var frames := 10 if big else 4
+	var frames := (10 if big else 4) if show_frames else 0
 	var head := h * 0.17 if big else 34.0
 	var row_h := minf((h - head) / maxf(rows.size(), 4.0), 92.0) if big else 34.0
 	var fs := int(row_h * 0.52)
@@ -61,9 +62,9 @@ func _draw() -> void:
 		draw_style_box(UI.card(UI.CREAM, 20, 5), Rect2(0, 0, w, head + row_h * maxf(rows.size(), 1.0) + 10.0))
 		_text(title, Vector2(18, 28), "Scores", 24, UI.NAVY)
 	var rank_w := 34.0 if not big else 56.0
-	var name_w := w * (0.22 if big else 0.36)
+	var name_w := w * (0.22 if big else 0.36) if show_frames else w * 0.6
 	var total_w := w * (0.13 if big else 0.17)
-	var box_w := (w - rank_w - name_w - total_w - 20.0) / frames
+	var box_w := (w - rank_w - name_w - total_w - 20.0) / maxi(frames, 1)
 	for i in rows.size():
 		var r: Dictionary = rows[i]
 		var y := head + 4.0 + i * row_h

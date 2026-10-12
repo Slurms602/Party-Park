@@ -3,6 +3,17 @@ class_name Bot
 
 
 static func think(b: Beast, arena: Arena, dt: float) -> Dictionary:
+	var inp := _think(b, arena, dt)
+	# Fields with an edge (Sumo Ring): don't run or dive off it, unless we're about to throw someone over.
+	var r := Vector2(b.global_position.x, b.global_position.z)
+	var carrying: bool = b.holding is Beast and b.holding.state == Beast.CARRIED
+	if r.length() > arena.safe_radius() and not carrying:
+		inp.move = (inp.move * 0.3 - r.normalized()).limit_length(1.0)
+		inp.dive = false
+	return inp
+
+
+static func _think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 	var m := b.bot_mem
 	var inp := {move = Vector2.ZERO, jump = false, punch = false, grab = false, dive = false}
 	m.t = m.get("t", randf()) + dt
@@ -11,6 +22,20 @@ static func think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 		return inp
 	var pos := b.global_position
 
+	if b.holding is Beast and b.holding.state == Beast.CARRIED and not arena.is_bowling():
+		# Sumo: carry them to the nearest edge and throw them over it.
+		inp.grab = true
+		var r := Vector2(pos.x, pos.z).length()
+		var out := Vector2(pos.x, pos.z) / r if r > 0.5 else Vector2(0, 1)
+		if r < arena.safe_radius() - 1.0 and m.get("wind", -1.0) < 0.0:
+			inp.move = out
+		else:
+			m.wind = m.get("wind", -1.0) + dt if m.get("wind", -1.0) >= 0.0 else 0.0
+			inp.move = out * 0.2  # face outward while winding up
+			inp.punch = m.wind < 0.6
+			if not inp.punch:
+				m.wind = -1.0
+		return inp
 	if b.holding is Beast and b.holding.state == Beast.CARRIED:
 		inp.grab = true
 		if m.get("lane", -1) < 0:
@@ -32,7 +57,7 @@ static func think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 
 	if b.holding != null:  # dragging someone or swinging a pin
 		inp.grab = true
-		return _fight(b, m, inp, dt, 1.4)
+		return _fight(b, arena, m, inp, dt, 1.4)
 
 	# Going for a downed player: humans take a beat to notice, don't all go for it, and fumble the grab.
 	var ball := _nearest(b, func(o: Beast): return o.state == Beast.BALL and o.held_by == null, 14.0)
@@ -63,19 +88,21 @@ static func think(b: Beast, arena: Arena, dt: float) -> Dictionary:
 			var to := box.global_position - pos
 			inp.move = Vector2(to.x, to.z).normalized()
 			return inp
-	return _fight(b, m, inp, dt, 1.5)
+	return _fight(b, arena, m, inp, dt, 1.5)
 
 
-static func _fight(b: Beast, m: Dictionary, inp: Dictionary, dt: float, reach: float) -> Dictionary:
+static func _fight(b: Beast, arena: Arena, m: Dictionary, inp: Dictionary, dt: float, reach: float) -> Dictionary:
 	if m.get("retarget", 0.0) <= 0.0 or not is_instance_valid(m.get("target")):
 		# Fight where the bowling happens: don't chase people down the lanes unless they're right here.
 		var pos := b.global_position
-		m.target = _nearest(b, func(o: Beast): return o.state <= Beast.DIVE and o.immune <= 0.0 and (o.global_position.z > -1.5 or o.global_position.distance_to(pos) < 3.0), 30.0)
+		var bowling := arena.is_bowling()
+		m.target = _nearest(b, func(o: Beast): return o.state <= Beast.DIVE and o.immune <= 0.0 and not o.out and (not bowling or o.global_position.z > -1.5 or o.global_position.distance_to(pos) < 3.0), 30.0)
 		m.retarget = randf_range(0.6, 1.5)
 	m.retarget -= dt
 	var target = m.target
 	if target == null or not is_instance_valid(target):
-		var home := Vector3(sin(m.t * 0.4) * 5.0, 0.0, 6.0) - b.global_position  # mill about the back floor
+		var spot := Vector3(sin(m.t * 0.4) * 5.0, 0.0, 6.0) if arena.is_bowling() else Vector3(sin(m.t * 0.4), 0.0, cos(m.t * 0.3)) * 2.0
+		var home := spot - b.global_position  # mill about the back floor (or the middle of the ring)
 		inp.move = Vector2(home.x, home.z).limit_length(1.0) * 0.6
 		return inp
 	var to: Vector3 = target.global_position - b.global_position

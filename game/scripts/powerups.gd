@@ -34,8 +34,7 @@ static var _ball_mat: StandardMaterial3D
 func setup(arena: Arena, is_server: bool) -> void:
 	_server = is_server
 	_pins = arena.pins
-	var x := arena.half_w * 0.5
-	_spots = [Vector3(-x, 0.0, 5.5), Vector3(0.0, 0.0, 7.5), Vector3(x, 0.0, 5.5)]
+	_spots.assign(arena.item_spots())
 	_timers = [3.0, 5.0, 7.0]  # the first boxes pop in just after BOWL!
 	for s in _spots:
 		_boxes.append(_box(s))

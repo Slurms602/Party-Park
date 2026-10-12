@@ -4,6 +4,10 @@ extends Node
 ## --quit-after=S --shot=out.png@5,9 --timescale=N --screen=customize|settings|join --map=classic|sunset
 
 var _game: Game
+var _board: Board
+var _mode: OptionButton
+var _maps: OptionButton
+var _start: Button
 var _attract: Node3D
 var _attract_arena: Arena
 var _attract_bots: Array[Beast] = []
@@ -56,7 +60,9 @@ func _ready() -> void:
 		_args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	if _args.has("name"):
 		Prefs.player_name = _args.name
-	_menu_map = _args.get("map", Arena.MAPS.keys().pick_random())
+	_menu_map = _args.get("map", "")
+	if not _menu_map in ["classic", "sunset"]:  # the menu plays a bowling alley behind it, never a minigame field
+		_menu_map = ["classic", "sunset"].pick_random()
 	UI.use(Arena.is_dark(_menu_map))
 	_build_ui()
 	_show_attract(true)
@@ -66,6 +72,7 @@ func _ready() -> void:
 	Net.players_changed.connect(_refresh_lobby)
 	Net.match_started.connect(_on_match_started)
 	Net.match_ended.connect(_on_match_ended)
+	Net.party_changed.connect(_on_party_changed)
 	Net.status.connect(func(t):
 		if _hosting:  # the online server isn't reachable: host by IP instead, without asking
 			_hosting = false
@@ -225,28 +232,37 @@ func _build_ui() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	lobby.add_child(row)
-	_host_only.append(UI.button(row, "+ Bot", Net.add_bot, 130))
-	_host_only.append(UI.button(row, "- Bot", Net.remove_bot, 130))
+	_host_only.append(UI.button(row, "+ Bot", Net.add_bot, 110))
+	_host_only.append(UI.button(row, "- Bot", Net.remove_bot, 110))
+	_mode = OptionButton.new()  # Party: the board with a minigame every round. Quick match: one game, as before.
+	_mode.add_item("Party")
+	_mode.add_item("Quick match")
+	_mode.custom_minimum_size = Vector2(190, 60)
+	_mode.item_selected.connect(func(_i): _mode_changed())
+	row.add_child(_mode)
+	_host_only.append(_mode)
 	_length = OptionButton.new()
-	for m in [2, 3, 5]:
-		_length.add_item("%d min match" % m, m)
-	_length.select(1)
-	_length.custom_minimum_size = Vector2(240, 60)
+	_length.custom_minimum_size = Vector2(210, 60)
 	row.add_child(_length)
 	_host_only.append(_length)
-	var maps := OptionButton.new()
+	_maps = OptionButton.new()
 	for id in Arena.MAPS:
-		maps.add_item(Arena.MAPS[id].capitalize())
-	maps.select(Arena.MAPS.keys().find(Net.map))
-	maps.item_selected.connect(func(i): Net.map = Arena.MAPS.keys()[i])
-	maps.custom_minimum_size = Vector2(260, 60)
-	row.add_child(maps)
-	_host_only.append(maps)
-	var start := UI.primary(UI.button(lobby, "Start match", func(): Net.start_match(_length.get_selected_id() * 60.0)))
-	start.add_theme_font_size_override("font_size", 38)
-	start.custom_minimum_size.y = 74
-	start.size_flags_horizontal = Control.SIZE_FILL  # the one big button spans the screen
-	_host_only.append(start)
+		_maps.add_item(Arena.MAPS[id].capitalize())
+	_maps.select(Arena.MAPS.keys().find(Net.map))
+	_maps.item_selected.connect(func(i): Net.map = Arena.MAPS.keys()[i])
+	_maps.custom_minimum_size = Vector2(220, 60)
+	row.add_child(_maps)
+	_host_only.append(_maps)
+	_start = UI.primary(UI.button(lobby, "Start party", func():
+		if _mode.selected == 0:
+			Net.start_party(_length.get_selected_id())
+		else:
+			Net.start_match(_length.get_selected_id() * 60.0)))
+	_start.add_theme_font_size_override("font_size", 38)
+	_start.custom_minimum_size.y = 74
+	_start.size_flags_horizontal = Control.SIZE_FILL  # the one big button spans the screen
+	_host_only.append(_start)
+	_mode_changed()
 	var row2 := HBoxContainer.new()
 	row2.add_theme_constant_override("separation", 10)
 	lobby.add_child(row2)
@@ -255,6 +271,16 @@ func _build_ui() -> void:
 	UI.button(row2, "Leave", func():
 		Net.leave()
 		_show("main"), 160)
+
+
+func _mode_changed() -> void:
+	var party := _mode.selected == 0
+	_length.clear()
+	for n in ([5, 8, 12] if party else [2, 3, 5]):
+		_length.add_item(("%d rounds" if party else "%d min match") % n, n)
+	_length.select(1)
+	_maps.visible = Net.is_host() and not party  # a party picks its own minigames
+	_start.text = "Start party" if party else "Start match"
 
 
 func _logo(parent: Node) -> void:
@@ -643,6 +669,7 @@ func _refresh_lobby() -> void:
 		_cards.add_child(card)
 	for c in _host_only:
 		c.visible = Net.is_host()
+	_maps.visible = Net.is_host() and _mode.selected != 0
 	var lan := Array(IP.get_local_addresses()).filter(func(a): return a.count(".") == 3 and not a.begins_with("127.") and not a.begins_with("169.254."))
 	_status.text = ""
 	_room_note.text = ""
@@ -796,6 +823,9 @@ func _process(dt: float) -> void:
 func _on_match_started(_seconds: float) -> void:
 	if _game:
 		return
+	if _board:
+		_board.queue_free()
+		_board = null
 	_show_attract(false)
 	_ui.visible = false
 	_game = Game.new()
@@ -808,6 +838,9 @@ func _on_match_ended() -> void:
 	if _game:
 		_game.queue_free()
 		_game = null
+	if Net.in_party():  # back to the board for the next round
+		_open_board()
+		return
 	_show_attract(true)
 	_ui.visible = true
 	Music.play("menu")
@@ -815,6 +848,24 @@ func _on_match_ended() -> void:
 	if not Progress.fresh.is_empty():
 		_toast("NEW UNLOCKS: %s. Try them on in CUSTOMIZE!" % ", ".join(Progress.fresh.map(func(r): return Progress.reward_name(r))))
 		Progress.fresh = []
+
+
+func _on_party_changed() -> void:
+	if Net.in_party():
+		if _game == null and _board == null:
+			_open_board()
+	elif _board:
+		_board.queue_free()
+		_board = null
+		_on_match_ended()  # back to the lobby, with any unlocks from the party
+
+
+func _open_board() -> void:
+	_show_attract(false)
+	_ui.visible = false
+	_board = Board.new()
+	_board.name = "Board"
+	add_child(_board)
 
 
 func _toast(text: String) -> void:
@@ -848,7 +899,9 @@ func _run_args() -> void:
 	var setup := func():
 		for i in int(_args.get("bots", "0")):
 			Net.add_bot()
-		if _args.has("autostart"):
+		if _args.has("party"):
+			Net.start_party(int(_args.party))
+		elif _args.has("autostart"):
 			Net.start_match(float(_args.get("seconds", "180")))
 	if _args.has("host"):  # local network (ENet)
 		_status.text = Net.host_lan()
@@ -888,6 +941,9 @@ func _report() -> void:
 		avg_frame_ms = snappedf(_bench.y / maxf(_bench.x, 1.0) * 1000.0, 0.1), worst_frame_ms = snappedf(_bench.z * 1000.0, 0.1),
 		avg_cpu_ms = snappedf(_bench.w / maxf(_bench.x, 1.0), 0.01), avg_draws = roundi(_bench_draws / maxf(_bench.x, 1.0)), draw_calls = Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 		objects = Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)}
+	if Net.in_party():
+		out.party = {round = Net.party.round, phase = Net.party.phase, game = Net.party.next_game, board = _board != null,
+			players = Net.party.players}
 	if _game:
 		out.time_left = snappedf(_game.time_left, 0.1)
 		out.scores = _game.scores

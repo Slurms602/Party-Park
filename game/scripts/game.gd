@@ -54,6 +54,8 @@ func _ready() -> void:
 	add_child(arena)
 	arena.setup(server)
 	arena.roll_finished.connect(_on_roll)
+	if server and arena is SumoRing:
+		arena.fell.connect(_on_fell)
 	powerups = Powerups.new()
 	add_child(powerups)
 	powerups.setup(arena, server)
@@ -64,13 +66,14 @@ func _ready() -> void:
 		arena.bumpers_changed.connect(func(lane: int, on: bool): _send(_ev_bumpers, [lane, on], false))
 	cam = Camera3D.new()
 	cam.fov = 55.0
-	cam.position = Vector3(0, 10, 16)
 	add_child(cam)
+	cam.look_at_from_position(Vector3(0, 10, 16), Vector3.ZERO)  # aimed from the first frame
 	cam.current = true
 	if Look.high():
 		Look.dof(cam, 32.0)
 	hud = Hud.new()
 	add_child(hud)
+	hud.board.show_frames = arena.is_bowling()
 	_touch = OS.has_feature("mobile") or "--touch" in OS.get_cmdline_user_args()
 	if _touch:
 		var tc := TouchControls.new()
@@ -128,6 +131,8 @@ func _physics_process(dt: float) -> void:
 	pre = maxf(pre - dt, 0.0)
 	for pid in beasts:
 		var b: Beast = beasts[pid]
+		if b.out:
+			continue
 		var inp: Dictionary = Bot.think(b, arena, dt) if Net.players[pid].bot else inputs.get(pid, {})
 		b.sim(inp if pre <= 0.0 else {}, dt)  # everyone waits for the countdown
 	arena.server_update(dt, beasts.values())
@@ -211,10 +216,46 @@ func _on_flattened(by: int, victim: Beast) -> void:
 	_send(_ev_feed, [Net.players[by].name, Net.players[by].color, "BOWLED OVER +%d" % FLATTEN_POINTS, Color("c79a00"), victim.display_name, victim.color])
 
 
+func _on_fell(b: Beast) -> void:
+	## Sumo Ring: everyone still on the ring scores each time someone goes over; the last one standing gets a bonus.
+	if over or b.out:
+		return
+	var by := b.last_toucher if b.state >= Beast.BALL and b.last_toucher != 0 else (b.last_hit_by if b.since_hit < 4.0 else 0)
+	b.set_out()
+	for pid in beasts:
+		if not beasts[pid].out and scores.has(pid):
+			scores[pid].total += 1
+	if by != 0 and by != b.pid and scores.has(by) and Net.players.has(by):
+		scores[by].kos += 1
+		_send(_ev_feed, [Net.players[by].name, Net.players[by].color, "RING OUT", Color("e5383b"), b.display_name, b.color])
+	else:
+		_send(_ev_feed, [b.display_name, b.color, "FELL OFF", Color("6a5a8a"), "", Color.WHITE])
+	var alive: Array = beasts.values().filter(func(x): return not x.out)
+	if alive.size() <= 1 and beasts.size() > 1:
+		if alive.size() == 1 and scores.has(alive[0].pid):
+			scores[alive[0].pid].total += 3
+			_send(_ev_feed, [alive[0].display_name, alive[0].color, "LAST ONE STANDING +3", Color("c79a00"), "", Color.WHITE])
+		get_tree().create_timer(1.5).timeout.connect(_end_match)
+	_send(_ev_scores, [scores])
+
+
 func _end_match() -> void:
+	if over:
+		return
 	over = true
 	_send(_ev_end, [])
-	get_tree().create_timer(10.0).timeout.connect(Net.end_match)
+	get_tree().create_timer(7.0 if Net.in_party() else 10.0).timeout.connect(_finish)
+
+
+func _finish() -> void:
+	## Host: back to the lobby, or in a party, pay out coins by place and go back to the board.
+	if Net.in_party():
+		var points := {}
+		for pid in scores:
+			if Net.players.has(pid):
+				points[pid] = scores[pid].total
+		Net.party_minigame_done(points)
+	Net.end_match()
 
 
 func _leader() -> int:
@@ -239,7 +280,7 @@ func _pack_beasts() -> Array:
 	for pid in beasts:
 		var b: Beast = beasts[pid]
 		var flags := int(b.holding != null) | int(b.reaching) << 1 | int(b.holding is Beast and b.holding.state == Beast.CARRIED) << 2 \
-			| int(b.leader) << 3 | int(b.golden) << 4
+			| int(b.leader) << 3 | int(b.golden) << 4 | int(b.out) << 5
 		out.append([pid, b.global_position, b.global_basis.get_rotation_quaternion(), b.state, b.facing,
 			b.charge if b.charging else -1.0, b.punch_t[0], b.punch_t[1], flags, b.health, b.immune, b.last_toucher, b.ko_time,
 			-1 if b.item == "" else Powerups.KINDS.keys().find(b.item) * 1000 + b.item_uses * 100 + ceili(b.item_t)])  # one int: 8 players must fit in one packet
@@ -520,7 +561,10 @@ func _ev_end() -> void:
 	var p: Dictionary = Net.players.get(top, {color = Color.WHITE, skin = {}})
 	var prog := {}
 	var mine := rows.filter(func(r): return r.pid == Net.my_id())
-	if not _banked and not mine.is_empty() and _match_t > 30.0:  # joined at the very end? nothing to bank
+	if not _banked and not mine.is_empty() and Net.in_party():
+		_banked = true
+		Net.add_party_stats(mine[0], _feats)  # a party banks once, at the end
+	elif not _banked and not mine.is_empty() and _match_t > 30.0:  # joined at the very end? nothing to bank
 		_banked = true
 		prog = Progress.finish_match(mine[0], top == Net.my_id() and mine[0].total > 0, _feats)
 		Progress.fresh = prog.unlocks
@@ -549,7 +593,7 @@ func _process(dt: float) -> void:
 		hud.set_prompts(_touchify(_prompts(me)))
 	hud.set_box_marks(_box_marks())
 	hud.set_time(time_left if pre <= 0.0 else Net.match_seconds)
-	if ceili(time_left) != ceili(arena.screen_board.time_left):  # the alley screen only changes once a second
+	if arena.screen_board and ceili(time_left) != ceili(arena.screen_board.time_left):  # the alley screen changes once a second
 		arena.screen_board.time_left = time_left
 		arena.screen_board.queue_redraw()
 	_update_camera(dt, me)
@@ -564,7 +608,7 @@ func _match_flow(dt: float) -> void:
 			hud.countdown(str(p), UI.LIGHT)
 			Sfx.play_ui("beep")
 		elif _pre_shown > 0:
-			hud.countdown("Bowl!", UI.MUSTARD, 180)
+			hud.countdown("Bowl!" if arena.is_bowling() else "Go!", UI.MUSTARD, 180)
 			Sfx.play_ui("go")
 			Music.play("match", 0.3)
 		_pre_shown = p
@@ -585,7 +629,11 @@ func _prompts(me: Beast) -> Array:
 		return []
 	if me.state >= Beast.BALL:
 		return [["MASH", "ANY BUTTON TO WAKE UP"]]
+	if me.out:
+		return [["!", "YOU'RE OUT. CHEER THEM ON!"]]
 	if me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED):
+		if not arena.is_bowling():
+			return [["HOLD LMB", "WIND UP"], ["RELEASE", "THROW THEM OFF!"]]
 		var out := [["HOLD LMB", "WIND UP"], ["RELEASE", "BOWL!"]]
 		if me.global_position.z < 0.3:
 			out.append(["!", "GET BEHIND THE FOUL LINE", true])
@@ -666,6 +714,8 @@ func _interpolate(dt: float) -> void:
 		bst.last_toucher = e[11]
 		bst.ko_time = e[12]
 		bst.golden = e[8] & 16 != 0
+		bst.out = e[8] & 32 != 0
+		bst.visible = not bst.out
 		bst.item = Powerups.KINDS.keys()[e[13] / 1000] if e[13] >= 0 else ""
 		bst.item_uses = e[13] % 1000 / 100
 		bst.item_t = e[13] % 100
@@ -692,10 +742,10 @@ func _update_camera(dt: float, me: Beast) -> void:
 		_follow_t -= dt
 		if _follow_t <= 0.0 or not is_instance_valid(_follow) or _follow.state != Beast.BALL:
 			_follow = null
-	var focus := Vector3(0, 0, 4)
+	var focus := Vector3(0, 0, 4) if arena.is_bowling() else Vector3.ZERO
 	if _follow:
 		focus = _follow.global_position
-	elif me:
+	elif me and not me.out:
 		focus = me.global_position
 	# Low and behind, looking down the lanes so you can always see the pins.
 	var want := focus + Vector3(0, 6.5, 9.0) * (0.8 if _touch else 1.0)  # phones: closer, so bowlers aren't specks
@@ -721,4 +771,5 @@ func _rows() -> Array:
 func _refresh_boards() -> void:
 	var rows := _rows()
 	hud.board.set_rows(rows, time_left)
-	arena.screen_board.set_rows(rows, time_left)
+	if arena.screen_board:
+		arena.screen_board.set_rows(rows, time_left)

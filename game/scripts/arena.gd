@@ -6,7 +6,7 @@ extends Node3D
 signal roll_finished(lane: int, bowler: int, knocked: int, kind: String)
 signal bumpers_changed(lane: int, on: bool)
 
-const MAPS := {classic = "COSMIC LANES", sunset = "SUNSET LANES"}  # id -> name in the lobby
+const MAPS := {classic = "COSMIC LANES", sunset = "SUNSET LANES", sumo = "SUMO RING"}  # id -> name in the lobby
 const APPROACH := 12.0
 const PIT_Y := -1.5
 const RERACK_FULL := 2.2  # seconds after all pins are down
@@ -113,7 +113,26 @@ static func is_dark(map_id: String) -> bool:
 
 
 static func make(map_id: String) -> Arena:
-	return SunsetArena.new() if map_id == "sunset" else Arena.new()
+	match map_id:
+		"sunset": return SunsetArena.new()
+		"sumo": return SumoRing.new()
+	return Arena.new()
+
+
+func is_bowling() -> bool:
+	## Minigame fields (Sumo Ring...) extend Arena with no lanes.
+	return lane_count > 0
+
+
+func safe_radius() -> float:
+	## How far from the middle a bot can wander before it's in danger (only fields with an edge to fall off).
+	return INF
+
+
+func item_spots() -> Array:
+	## Where item boxes appear: the back floor, where you bowl from. Minigames without items return none.
+	var x := half_w * 0.5
+	return [Vector3(-x, 0.0, 5.5), Vector3(0.0, 0.0, 7.5), Vector3(x, 0.0, 5.5)]
 
 
 func setup(is_server: bool) -> void:

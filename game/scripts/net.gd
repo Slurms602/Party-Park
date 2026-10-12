@@ -12,6 +12,7 @@ signal status(text: String)
 signal room_ready(code: String)
 signal lan_games_changed
 signal direct_info_changed  # public IP / router port status found while hosting by IP
+signal party_changed
 
 const PORT := 7777
 const BEACON_PORT := 7778
@@ -24,7 +25,9 @@ const BOT_NAMES := ["Gutterball", "Split", "Turkey", "Lefty", "Big Lebowski", "P
 var players := {}  # peer id (bots < 0) -> {name, color, bot, skin}
 var in_match := false
 var match_seconds := 180.0
-var map := "classic"  # Arena.MAPS id the host picked
+var map := "classic"  # Arena.MAPS id the host picked (in a party: the minigame being played)
+var party := {}  # party mode state, host-authoritative (see Party); empty when playing single matches
+var party_mine := {}  # this player's totals across a party's minigames, banked as one match at the end
 var _next_bot := -1
 var room_code := ""  # online room code (host and clients)
 var lan_games := {}  # ip -> beacon info {name, n, code, port, seen}
@@ -225,6 +228,9 @@ func leave() -> void:
 	if in_match:
 		in_match = false
 		match_ended.emit()
+	if in_party():
+		party = {}
+		party_changed.emit()
 	players_changed.emit()
 
 
@@ -312,6 +318,72 @@ func end_match() -> void:
 		_end.rpc()
 
 
+# ---------------------------------------------------------------- party mode
+
+func in_party() -> bool:
+	return not party.is_empty()
+
+
+func start_party(rounds: int) -> void:
+	if is_host():
+		_party.rpc(Party.new_state(players.keys(), rounds))
+
+
+func push_party() -> void:
+	## Host: everyone gets the new board state.
+	if is_host():
+		_party.rpc(party)
+
+
+func end_party() -> void:
+	if is_host():
+		_party.rpc({})
+
+
+func party_roll() -> void:
+	## This player taps Roll.
+	if is_host():
+		party_roll_for(my_id())
+	elif is_online():
+		_roll_request.rpc_id(1)
+
+
+func party_roll_for(pid: int) -> void:
+	if is_host() and Party.roll(party, pid) > 0:
+		push_party()
+
+
+func party_minigame_done(points: Dictionary) -> void:
+	if is_host():
+		Party.award(party, points)
+		push_party()
+
+
+func add_party_stats(row: Dictionary, feats: Dictionary) -> void:
+	## Sum this player's minigame results so the whole party banks as one match (Progress).
+	var m := party_mine
+	for k in ["total", "kos", "strikes", "spares"]:
+		m[k] = m.get(k, 0) + row.get(k, 0)
+	m.rolls = m.get("rolls", []) + row.get("rolls", [])
+	var f: Dictionary = m.get("feats", {pins = 0})
+	for k in feats:
+		f[k] = f.get(k, 0) + feats[k] if k == "pins" else (f.get(k, false) or feats[k])
+	m.feats = f
+
+
+@rpc("any_peer", "reliable")
+func _roll_request() -> void:
+	party_roll_for(multiplayer.get_remote_sender_id())
+
+
+@rpc("authority", "call_local", "reliable")
+func _party(state: Dictionary) -> void:
+	if not state.is_empty() and party.is_empty():
+		party_mine = {}  # a new party
+	party = state
+	party_changed.emit()
+
+
 func update_me() -> void:
 	## Push a changed name or skin from Prefs to everyone.
 	if is_host():
@@ -353,6 +425,9 @@ func _register(player_name: String, skin: Dictionary) -> void:
 		return
 	players[id] = _entry(player_name, false, skin)
 	_sync_players.rpc(players)
+	if in_party():  # drop-in: late joiners start on the start space
+		Party.add_player(party, id)
+		push_party()
 	if in_match:  # drop-in: late joiners spawn straight into the running match
 		_start.rpc_id(id, match_seconds, map)
 

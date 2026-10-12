@@ -110,7 +110,9 @@ func _contextual(me: Beast) -> void:
 		return
 	var carrying: bool = me.net_carrying or (me.holding is Beast and me.holding.state == Beast.CARRIED)
 	var punch_label: Label = _buttons[0].get_child(0)
-	punch_label.text = "BOWL!" if carrying else {ball = "THROW", giant_pin = "BONK"}.get(me.item, "PUNCH")
+	var parent := get_parent()  # the match (untyped: tests run these controls without one)
+	var bowling: bool = not ("arena" in parent) or parent.arena.is_bowling()
+	punch_label.text = ("BOWL!" if bowling else "THROW") if carrying else {ball = "THROW", giant_pin = "BONK"}.get(me.item, "PUNCH")
 	if _grab_on:
 		return
 	var near := false

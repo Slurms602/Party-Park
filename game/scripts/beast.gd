@@ -44,6 +44,7 @@ var item := ""  # Powerups.KINDS id, "" for none
 var item_t := 0.0  # seconds left before it expires
 var item_uses := 0  # GIANT PIN swings left
 var golden := false  # bowled with GOLDEN BALL: this roll scores double
+var out := false  # knocked out of a minigame round (Sumo Ring): hidden, frozen and skipped until the next match
 
 # Host-only
 var held_by: Beast = null
@@ -649,6 +650,16 @@ func _set_ball_shape(ball: bool) -> void:
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_AUTO if ball else RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	if not ball:
 		center_of_mass = Vector3(0, -0.35, 0)  # bottom-heavy, like a punching clown
+
+
+func set_out() -> void:
+	release_hold()
+	if held_by != null:
+		held_by.release_hold()
+	out = true
+	visible = false
+	freeze = true
+	global_position = Vector3(0, -40, 0)
 
 
 func is_rollable() -> bool:
