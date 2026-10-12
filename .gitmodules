@@ -1,0 +1,6 @@
+[submodule "game/minigames/bowling"]
+	path = game/minigames/bowling
+	url = https://github.com/Slurms602/Bowling-your-Friends.git
+[submodule "game/minigames/sumo"]
+	path = game/minigames/sumo
+	url = https://github.com/Slurms602/Party-Park-Sumo.git
