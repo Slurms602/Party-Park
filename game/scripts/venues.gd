@@ -1141,7 +1141,7 @@ class Ballpark extends Venue:
 		var dirt := Venues.paint(Color("c98b55"), 0.95)
 		var grass := Venues.paint(Color("4ea53a"), 0.85)
 		var chalk := Venues.paint(Color("fafafa"), 0.6)
-		var arc := MeshInstance3D.new()
+		var arc: MeshInstance3D = live(MeshInstance3D.new())  # (its mesh has no UVs: keep it out of bake())
 		arc.mesh = _fan(15.0, 0.04)
 		arc.material_override = dirt
 		root.add_child(arc)
