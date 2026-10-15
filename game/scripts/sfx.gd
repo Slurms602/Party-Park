@@ -29,6 +29,12 @@ func _ready() -> void:
 	_clips.hurry = _make(1.2, func(t): return sin(TAU * (500.0 + 300.0 * sin(TAU * 4.0 * t)) * t) * 0.3 * minf(t * 4.0, 1.0) * (1.0 - t / 1.2))
 	_clips.foul = _make(0.7, func(t): return (signf(sin(TAU * 140.0 * t)) + signf(sin(TAU * 147.0 * t))) * 0.15 * (1.0 - t / 0.7))
 	_clips.buzzer = _make(1.0, func(t): return signf(sin(TAU * 110.0 * t)) * 0.25 * (1.0 - t))
+	# the board: a referee's pea whistle (a trill), and a stadium crowd roaring
+	_clips.whistle = _make(0.9, func(t): return sin(TAU * (2900.0 * t + 6.0 * sin(TAU * 32.0 * t))) * 0.3 * minf(t * 30.0, 1.0) * clampf((0.9 - t) * 8.0, 0.0, 1.0))
+	var roar := [0.0]  # a low-pass on the noise: a roar, not hiss
+	_clips.cheer = _make(2.4, func(t):
+		roar[0] += (_n() - roar[0]) * 0.12
+		return roar[0] * 1.1 * minf(t * 2.5, 1.0) * clampf((2.4 - t) * 1.2, 0.0, 1.0) * (0.75 + 0.25 * sin(TAU * 5.0 * t + sin(TAU * 1.3 * t) * 3.0)))
 	for i in 24:
 		var p := AudioStreamPlayer3D.new()
 		p.unit_size = 8.0

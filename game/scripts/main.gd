@@ -888,6 +888,32 @@ func _toast(text: String) -> void:
 
 # ================================================================= test hooks
 
+func _show_demo() -> void:
+	## --show-demo: skip the tour and play one of every board event in a row (for screenshots of the show).
+	var s: Dictionary = Net.party
+	var p: Array = s.players.keys()
+	var a: int = p[0]
+	var b: int = p[1 % p.size()]
+	var c: int = p[2 % p.size()]
+	s.players[a].space = Party.LEG.courts + 1
+	s.players[b].space = Party.LEG.courts + 2
+	s.players[c].space = Party.LEG.speedway + 2
+	var star: int = s.star
+	var far: int = Party.LEG.beach + 4
+	s.show = [["trophy", a, star], ["trophy_move", star, far], ["ref", a, "offside", Party.LEG.courts + 1, 0], ["trade", a, a, b, "coins10"],
+		["fore", a, b, 5], ["wave", a, [b]], ["dunk", a, 7], ["cannon", a, "double"], ["gulls", a, "", -6],
+		["homerun", a, Party.LEG.ballpark + 1, Party.LEG.golf + 5], ["pitstop", c, Party.LEG.speedway + 1, Party.LEG.speedway + 7],
+		["ski", a, Party.LEG.descent, Party.SKI_TO], ["avalanche", a, [b, c], [Party.LEG.trail + 9, Party.LEG.trail + 6]],
+		["duel", a, b, 7, 3, 5], ["strike", a, 3, [b]], ["mascot", a, b, "10 coins"]]
+	s.star = far
+	s.phase = "show"
+	s.show_time = 0.0
+	for e in s.show:
+		s.show_time += Party.SHOW[e[0]]
+	Net.push_party()
+	print("DEMO ", s.show.map(func(e): return e[0]))
+
+
 func _run_args() -> void:
 	if _args.has("timescale"):
 		# Scale the tick rate too, so each physics step stays 1/60 s (big steps make bodies tunnel).
@@ -903,6 +929,8 @@ func _run_args() -> void:
 			Net.add_bot()
 		if _args.has("party"):
 			Net.start_party(int(_args.party))
+			if _args.has("show-demo"):
+				_show_demo.call_deferred()
 		elif _args.has("autostart"):
 			Net.start_match(float(_args.get("seconds", "180")))
 	if _args.has("host"):  # local network (ENet)

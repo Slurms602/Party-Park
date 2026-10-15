@@ -366,15 +366,15 @@ func party_use_for(pid: int, i: int) -> void:
 		push_party()
 
 
-func party_choose(to: int) -> void:
-	## This player picks a way at a fork.
+func party_choose(to) -> void:
+	## This player decides at a stop: a way at a fork, an item at a shop (or "pass"), a deal with the mascot.
 	if is_host():
 		party_choose_for(my_id(), to)
 	elif is_online():
 		_choose_request.rpc_id(1, to)
 
 
-func party_choose_for(pid: int, to: int) -> void:
+func party_choose_for(pid: int, to) -> void:
 	if is_host() and Party.choose(party, pid, to):
 		push_party()
 
@@ -408,7 +408,7 @@ func _use_request(i: int) -> void:
 
 
 @rpc("any_peer", "reliable")
-func _choose_request(to: int) -> void:
+func _choose_request(to) -> void:
 	party_choose_for(multiplayer.get_remote_sender_id(), to)
 
 

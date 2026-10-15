@@ -20,9 +20,11 @@ its own: it needs this repo around it.
 
 - `game/scripts/`: the core. `game.gd` the match (host sim, snapshots, scores, HUD, camera), `beast.gd` the bowler,
   `bot.gd`, `net.gd` + `relay_peer.gd` networking, `powerups.gd` items, `ui.gd`/`hud.gd`/`main.gd` UI,
-  `progress.gd` XP and achievements, `arena.gd` **the minigame base class**, `party.gd` + `board.gd` the board.
+  `progress.gd` XP and achievements, `arena.gd` **the minigame base class**, `party.gd` the board's rules and map,
+  `board.gd` the board on screen, `park.gd` + `venues.gd` the world it's played on.
 - `game/minigames/<id>/`: one folder per minigame, each its own repo.
-- `game/assets/`: shared fonts, music, Kenney props, `cosmetics.glb`. `server/`: the relay (Render). `tools/`: Blender and music generators.
+- `game/assets/`: shared fonts, music, Kenney props and Quaternius's nature kit (`props/meadow`), `cosmetics.glb`.
+  `server/`: the relay (Render). `tools/`: Blender and music generators.
 
 ## Adding a minigame
 

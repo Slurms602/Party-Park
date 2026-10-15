@@ -84,20 +84,34 @@ offer to download the export templates the first time.
 
 ### Party mode
 
-A Mario Party-style board game on **Party Park**, an amusement park island. Everyone **rolls at the same time**
-(dice 1–10) and hops along a path that winds past the rides. At two **forks** you pick a way: the plaza shortcut or
-the long way past the sumo dojo, the main path or the lakeside walk.
+A Mario Party-style board game on **Party Park**, a sports park on an island: 129 spaces round a football stadium,
+past a speedway, a golf course, a ski mountain, a beach, a ballpark, the courts, the bowling alley and the sumo dojo.
+Everyone **rolls at the same time** (dice 1–10) and hops along. At four **forks** you pick a way: the **Stadium
+tunnel** (a big shortcut across the pitch, 8 coins), the **Fairway** or the cart path, the **Chairlift** (3 coins) or
+the hiking trail up the mountain, the **Shoreline** or the boardwalk.
 
-- Spaces: blue +3 coins, red −3, green "?" lucky, yellow items, purple seagulls (they steal coins or an item), the
-  **ticket booth** (passing pays 3 coins in, landing wins the lot) and orange **landmark events**: ride the **roller
-  coaster** across the park, spin the **prize wheel**, bowl over everyone near the **bowling alley**, or take on
-  whoever's closest in a **sumo duel**.
-- Items (carry two, use before rolling): **Double Dice**, **Swap Ticket** (trade places), **Coin Magnet** (5 coins from
-  the richest), **Golden Ticket** (warp to the star).
-- Reach the **star** with 20 coins and you buy it, then it moves. After every round a random **sports minigame** pays
-  coins by finishing place (10, 7, 5, 3, 2, 1...).
-- After 5, 8 or 12 rounds come the **bonus stars** (most minigame coins, most coins at once, most event spaces), then
-  most stars wins (coins break ties). A whole party counts as one match for XP and trophies.
+- Spaces: blue +3 coins, red −3, yellow items, the **ticket booth** (passing pays 3 coins in, landing wins the lot)
+  and the events:
+  - green **"!" happenings**, different in every part of the park: the crowd does **the wave** and showers you with
+    coins, a race car gives you a lift (**pit stop**), a stray drive conks someone (**FORE!**) and you pocket their
+    coins, an **avalanche** sweeps everyone else down the mountain, you're hit for a **home run** to anywhere on the
+    board, **seagulls** raid your snacks, a **slam dunk** pays out, the mascot's **T-shirt cannon** fires you a prize;
+  - the **referee** (Mario Party's Bowser, in stripes): a yellow card, offside, a penalty, a red card back to the
+    start, or the salary cap, which shares everyone's coins out evenly;
+  - **Trade Deadline** (Mario Party's Chance Time): two random players make a deal they didn't ask for;
+  - the **ski jump** (fly from the summit to the bowling alley), a **strike** at the alley (bowls over whoever's
+    near) and a **sumo duel** at the dojo.
+- Passing a **Pro Shop** stops you to buy an item; passing the **mascot** stops you to pay it to pinch coins from the
+  richest or a trophy from the leader.
+- Items (carry three, use before rolling): **Double Dice**, **Energy Drink** (+3), **Swap Ticket** (trade places),
+  **Coin Magnet** (5 coins from the richest), **Ref's Whistle** (the leader gets booked), **Golden Ticket** (warp to
+  the trophy).
+- Reach the **trophy** with 20 coins and you win it, then it moves somewhere new. After every round a random
+  **sports minigame** pays coins by finishing place (10, 7, 5, 3, 2, 1...).
+- The big moments play one at a time with their own camera shot, so everyone sees them. The **final round** is a
+  frenzy: blue and red spaces count double and whoever's last gets 10 coins to catch up.
+- After 5, 8 or 12 rounds come the **bonus trophies** (Minigame MVP, Moneybags, Hustle Award), then most trophies
+  wins (coins break ties). A whole party counts as one match for XP and trophies.
 
 Minigames so far: **Cosmic Bowling** and **Sunset Bowling** (75-second versions of the main game) and **Sumo Ring**
 (no punches: grab belts, shove and charge everyone off a floating ring; everyone still in scores when someone goes
@@ -190,7 +204,9 @@ game/
     bowler_model.gd     the bowler's look: bean body + outfit/face shader, hats, gloves, shoes
     net.gd              lobby, hosting/joining by room code, LAN discovery, direct IP, party state (autoload)
     relay_peer.gd       MultiplayerPeer that tunnels through the relay over a WebSocket
-    party.gd, board.gd  party rules and map (moves, forks, items, events, the star, payouts) and the park itself
+    party.gd            party rules and the map (moves, forks, shops, items, events, the trophy, payouts)
+    board.gd            the party board on screen: pieces, camera, the show of each event, the HUD, the host's clock
+    park.gd, venues.gd  Party Park itself: terrain, sea, sky, paths and spaces; the venues and everything moving in them
     powerups.gd         item boxes, the power-up table, thrown bowling balls
     progress.gd         XP, levels, achievements and which cosmetics they unlock
     bot.gd              bots (host-side; they send the same input as a human)
@@ -200,7 +216,8 @@ game/
   minigames/            one folder per minigame, each its own repo (submodule)
     bowling/            Bowling your Friends: Cosmic Lanes, Sunset Lanes, their props, bowling tests
     sumo/               Sumo Ring
-  assets/               music, fonts (SIL OFL), cosmetics.glb (tools/blender/cosmetics.py), Kenney props (CC0)
+  assets/               music, fonts (SIL OFL), cosmetics.glb (tools/blender/cosmetics.py), Kenney props and
+                        Quaternius's Stylized Nature MegaKit (props/meadow) (both CC0)
   tests/                core tests: party rules, progression, render benchmark
 ```
 
