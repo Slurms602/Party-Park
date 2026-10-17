@@ -400,68 +400,18 @@ void fragment() {
 		_screen.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 	func _crowd_fill() -> void:
-		## Fans on every tier (a few empty seats), each bouncing to their own beat. The wave rolls round them.
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = true
-		mm.use_custom_data = true
-		var bean := CapsuleMesh.new()
-		bean.radius = 0.26
-		bean.height = 0.85
-		bean.radial_segments = 8
-		bean.rings = 3
-		mm.mesh = bean
-		var xf := []
+		## Fans on every tier (a few empty seats). The wave rolls round them by their angle round the pitch.
+		var seats := []
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 3
-		var shirts := [Color("e8323c"), Color("2f6bff"), Color("ffd23f"), Color("2ecc71"), Color("ff8c2a"), Color("9b59ff"),
-			Color("ff5fb4"), Color("1fd1c1"), Color("f4f1ea")]
 		var every := 0.85 if not Look.fast() else 1.7
 		for k in TIERS:
 			for e in rr(k * TREAD + TREAD * 0.55, every):
 				var p: Vector2 = e[0]
 				if _gap(p) or rng.randf() < 0.18:
 					continue
-				var ang := fposmod(atan2(p.y, p.x) / TAU, 1.0)
-				xf.append([Transform3D(Basis(), Vector3(p.x, FRONT + k * RISE + 0.45, p.y)), shirts[rng.randi() % shirts.size()],
-					Color(rng.randf(), ang, 0, 0)])
-		mm.instance_count = xf.size()
-		for i in xf.size():
-			mm.set_instance_transform(i, xf[i][0])
-			mm.set_instance_color(i, xf[i][1])
-			mm.set_instance_custom_data(i, xf[i][2])
-		if Venues._crowd_shader == null:
-			Venues._crowd_shader = Shader.new()
-			Venues._crowd_shader.code = """
-shader_type spatial;
-// Fans: each bobs to their own beat; while the wave is on, a crest of fans jumping up runs round the stadium.
-uniform float wave_t = -100.0;
-uniform float cheer = 0.0;
-varying vec3 shirt;
-void vertex() {
-	float ph = INSTANCE_CUSTOM.x * 6.2831;
-	float bob = max(sin(TIME * (5.0 + INSTANCE_CUSTOM.x * 3.0) + ph), 0.0) * (0.05 + cheer * 0.4);
-	float front = fract(wave_t * 0.3);
-	float d = abs(INSTANCE_CUSTOM.y - front);
-	d = min(d, 1.0 - d);
-	float on = step(0.0, wave_t) * step(wave_t, 6.5);
-	float lift = exp(-d * d * 260.0) * 0.95 * on;
-	VERTEX.y += bob + lift;
-	VERTEX.y *= 1.0 + lift * 0.3;
-	shirt = COLOR.rgb;
-}
-void fragment() {
-	ALBEDO = shirt;
-	ROUGHNESS = 0.6;
-}
-"""
-		_crowd = ShaderMaterial.new()
-		_crowd.shader = Venues._crowd_shader
-		var mmi := MultiMeshInstance3D.new()
-		mmi.multimesh = mm
-		mmi.material_override = _crowd
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mmi)
+				seats.append([Vector3(p.x, FRONT + k * RISE + 0.45, p.y), fposmod(atan2(p.y, p.x) / TAU, 1.0)])
+		_crowd = Venues.crowd(self, seats)
 
 	func wave() -> void:
 		## The Mexican wave (and confetti).
@@ -1917,6 +1867,77 @@ static func confetti(parent: Node3D, pos: Vector3, spread: float, col := Color(-
 	p.position = pos
 	parent.add_child(p)
 	return p
+
+
+static func crowd(parent: Node3D, seats: Array) -> ShaderMaterial:
+	## Fans in the stands, one draw call: seats is [[position, place round the stands 0..1 (where the wave is)]].
+	## Each bobs to their own beat; set "cheer" (0..1) on the returned material to get them jumping, "wave_t" for the wave.
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.use_custom_data = true
+	var bean := CapsuleMesh.new()  # a body and a head: up close a lone capsule reads as a sweet, not a person
+	bean.radius = 0.24
+	bean.height = 0.7
+	bean.radial_segments = 8
+	bean.rings = 3
+	var head := SphereMesh.new()
+	head.radius = 0.16
+	head.height = 0.32
+	head.radial_segments = 8
+	head.rings = 4
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.append_from(bean, 0, Transform3D.IDENTITY)
+	st.append_from(head, 0, Transform3D(Basis(), Vector3(0, 0.5, 0)))
+	mm.mesh = st.commit()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var shirts := [Color("e8323c"), Color("2f6bff"), Color("ffd23f"), Color("2ecc71"), Color("ff8c2a"), Color("9b59ff"),
+		Color("ff5fb4"), Color("1fd1c1"), Color("f4f1ea")]
+	mm.instance_count = seats.size()
+	for i in seats.size():
+		mm.set_instance_transform(i, Transform3D(Basis(), seats[i][0]))
+		mm.set_instance_color(i, shirts[rng.randi() % shirts.size()])
+		mm.set_instance_custom_data(i, Color(rng.randf(), seats[i][1], 0, 0))
+	if _crowd_shader == null:
+		_crowd_shader = Shader.new()
+		_crowd_shader.code = """
+shader_type spatial;
+// Fans: each bobs to their own beat; while the wave is on, a crest of fans jumping up runs round the stadium.
+uniform float wave_t = -100.0;
+uniform float cheer = 0.0;
+varying vec3 shirt;
+varying float head;
+varying float tone;
+void vertex() {
+	head = step(0.37, VERTEX.y);
+	tone = fract(INSTANCE_CUSTOM.x * 13.0);
+	float ph = INSTANCE_CUSTOM.x * 6.2831;
+	float bob = max(sin(TIME * (5.0 + INSTANCE_CUSTOM.x * 3.0) + ph), 0.0) * (0.05 + cheer * 0.4);
+	float front = fract(wave_t * 0.3);
+	float d = abs(INSTANCE_CUSTOM.y - front);
+	d = min(d, 1.0 - d);
+	float on = step(0.0, wave_t) * step(wave_t, 6.5);
+	float lift = exp(-d * d * 260.0) * 0.95 * on;
+	VERTEX.y += bob + lift;
+	VERTEX.y *= 1.0 + lift * 0.3;
+	shirt = COLOR.rgb;
+}
+void fragment() {
+	vec3 skin = mix(vec3(0.98, 0.8, 0.66), vec3(0.42, 0.26, 0.17), tone);
+	ALBEDO = mix(shirt, skin, head);
+	ROUGHNESS = 0.6;
+}
+"""
+	var mat := ShaderMaterial.new()
+	mat.shader = _crowd_shader
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mmi)
+	return mat
 
 
 static func ball_mat(kind: int) -> ShaderMaterial:

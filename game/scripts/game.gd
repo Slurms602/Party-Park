@@ -672,6 +672,8 @@ func _rows() -> Array:
 			var sc: Dictionary = scores[pid]
 			rows.append({pid = pid, name = Net.players[pid].name, color = Net.players[pid].color, total = sc.total, rolls = sc.rolls,
 				me = pid == Net.my_id(), strikes = sc.get("strikes", 0), spares = sc.get("spares", 0), kos = sc.get("kos", 0)})
+			for c in arena.stats:  # a minigame's own columns (baskets, goals...) live in its scores too
+				rows[-1][c[1]] = sc.get(c[1], 0)
 	rows.sort_custom(func(x, y): return x.total > y.total)
 	return rows
 

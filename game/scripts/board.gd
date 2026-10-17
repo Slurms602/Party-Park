@@ -739,11 +739,16 @@ func _update_camera(dt: float, s: Dictionary) -> void:
 		var plaza := park.on_ground(Vector3(9, 0, 30))
 		_want_look = plaza + Vector3(0, 2.5, 0)
 		_want_at = plaza + Vector3(0, 7.0, 15.0)
-	elif _phase == "intro":
-		var sumo: bool = s.next_game.contains("sumo")
-		var venue: Vector3 = park.on_ground(Vector3(62, 0, -13) if sumo else Vector3(-52, 0, -24))
-		_want_look = venue + Vector3(0, 3, 0)
-		_want_at = venue + (Vector3(-14, 12, 16) if sumo else Vector3(20, 11, 8))  # the dojo from the path; the alley's front
+	elif _phase == "intro":  # the venue the next minigame is played at
+		if s.next_game == "hoops":
+			_aim((park.venues.courts as Venues.Courts).hoop(), 0.9)  # the dunk shot
+		elif s.next_game == "soccer":
+			_aim(Vector3(0, 0, -2), 2.3)  # the wave shot
+		else:
+			var sumo: bool = s.next_game.contains("sumo")
+			var venue: Vector3 = park.on_ground(Vector3(62, 0, -13) if sumo else Vector3(-52, 0, -24))
+			_want_look = venue + Vector3(0, 3, 0)
+			_want_at = venue + (Vector3(-14, 12, 16) if sumo else Vector3(20, 11, 8))  # the dojo from the path; the alley's front
 	else:
 		var focus: Node3D = me.root if not me.is_empty() else null
 		if focus == null:

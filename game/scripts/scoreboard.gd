@@ -7,6 +7,7 @@ const MARK_COLORS := {"X": Color("ffe14d"), "/": Color("2de2ff"), "-": Color(1, 
 
 var big := false
 var show_frames := true  # bowling frames; minigames without them just list totals
+var heading := "BOWLING YOUR FRIENDS"  # across the top of the big screen
 var rows: Array = []  # [{name, color, total, rolls: Array[String], me}], sorted best first
 var time_left := 0.0
 var _flash := ""
@@ -55,7 +56,7 @@ func _draw() -> void:
 	if big:
 		draw_rect(Rect2(Vector2.ZERO, size), Color("0a0820"))
 		draw_rect(Rect2(0, 0, w, head), Color("1d0f4a"))
-		_text(title, Vector2(24, head * 0.7), "BOWLING YOUR FRIENDS", int(head * 0.48), Color("ffe14d"))
+		_text(title, Vector2(24, head * 0.7), heading, int(head * 0.48), Color("ffe14d"))
 		var clock := "%d:%02d" % [int(time_left) / 60, int(time_left) % 60]
 		_text(title, Vector2(w - 24, head * 0.7), clock, int(head * 0.55), Color("2de2ff"), HORIZONTAL_ALIGNMENT_RIGHT)
 	else:
