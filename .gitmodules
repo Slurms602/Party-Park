@@ -4,3 +4,9 @@
 [submodule "game/minigames/sumo"]
 	path = game/minigames/sumo
 	url = https://github.com/Slurms602/Party-Park-Sumo.git
+[submodule "game/minigames/hoops"]
+	path = game/minigames/hoops
+	url = https://github.com/Slurms602/Party-Park-Hoops
+[submodule "game/minigames/soccer"]
+	path = game/minigames/soccer
+	url = https://github.com/Slurms602/Party-Park-Soccer

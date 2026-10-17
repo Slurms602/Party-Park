@@ -11,6 +11,8 @@ everyone's save folder, so it needs a save migration first.
 | `Slurms602/Party-Park` (this) | core, party board, builds, relay server | `/` |
 | `Slurms602/Bowling-your-Friends` | bowling minigame (Cosmic + Sunset Lanes) | `game/minigames/bowling` (submodule) |
 | `Slurms602/Party-Park-Sumo` | Sumo Ring minigame | `game/minigames/sumo` (submodule) |
+| `Slurms602/Party-Park-Hoops` | Dunk your Friends (basketball) | `game/minigames/hoops` (submodule) |
+| `Slurms602/Party-Park-Soccer` | Goal Rush (soccer) | `game/minigames/soccer` (submodule) |
 | `Slurms602/Bowling-your-Friends-Site` | website (GitHub Pages) and the release downloads | separate |
 
 Clone with `git clone --recursive`, or run `git submodule update --init` after a plain clone. A minigame can't run on
@@ -36,6 +38,8 @@ its own: it needs this repo around it.
    prompts, throws, camera and bot behaviour. A game that isn't a brawl can take over the punch and grab buttons
    (`buttons`), the bots (`bot_think`) and set `damage = 0` (no knockouts). `sumo_ring.gd` does all three (grappling
    and shoving); `bowling_arena.gd` is the full brawl. Say "player", not "bowler", in anything a non-bowling game shows.
+   Shared builders: `Venues.crowd` (stands full of fans that cheer), `Venues.confetti`, `Venues.ball_mat` (sports
+   balls), `Scoreboard` (a big screen; set its `heading`). `hoops_arena.gd` and `soccer_arena.gd` use them all.
 3. Rules run on the host in `server_update`, through `game`: `game.scores[pid].total += n` then `game.push_scores()`,
    `game.feed(...)` for the kill feed, `game.end_match()` to finish early. Effects that everyone sees go through your
    own `@rpc` methods sent with `game.send(_my_rpc, [args])` (the arena node is named `Arena` on every peer).
@@ -65,6 +69,8 @@ $GODOT --headless --path game -s minigames/bowling/tests/test_bowling.gd     # r
 $GODOT --headless --path game -s minigames/bowling/tests/test_powerups.gd
 $GODOT --headless --path game -s minigames/bowling/tests/test_touch_grab.gd
 $GODOT --headless --path game -s minigames/bowling/tests/strike_rate.gd      # ~1 min
+$GODOT --headless --path game -s minigames/hoops/tests/test_hoops.gd
+$GODOT --headless --path game -s minigames/soccer/tests/test_soccer.gd
 $GODOT --headless --path game -- --host --bots=3 --party=2 --timescale=3 --quit-after=80   # a whole party with bots
 $GODOT --headless --path game -- --host --bots=5 --autostart --map=sumo --timescale=3 --quit-after=30   # one minigame, prints REPORT
 ```

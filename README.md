@@ -113,9 +113,12 @@ the hiking trail up the mountain, the **Shoreline** or the boardwalk.
 - After 5, 8 or 12 rounds come the **bonus trophies** (Minigame MVP, Moneybags, Hustle Award), then most trophies
   wins (coins break ties). A whole party counts as one match for XP and trophies.
 
-Minigames so far: **Cosmic Bowling** and **Sunset Bowling** (75-second versions of the main game) and **Sumo Ring**
+Minigames so far: **Cosmic Bowling** and **Sunset Bowling** (75-second versions of the main game), **Sumo Ring**
 (no punches: grab belts, shove and charge everyone off a floating ring; everyone still in scores when someone goes
-over, the pusher scores again, last one standing +3).
+over, the pusher scores again, last one standing +3), **Dunk your Friends** (knock people out and shoot them
+through giant hoops: charge to the right power, 3 from past the arc, slam dunks from under the rim, three in a row
+and you're on fire) and **Goal Rush** (free-for-all soccer under the floodlights: kick the ball into either goal for
+2 or throw a knocked-out player in for 3, past goalkeepers that dive for hard shots; multiball for the last 40 s).
 **Quick match** plays a single game on the map you pick, as before.
 
 ### Maps
@@ -216,6 +219,8 @@ game/
   minigames/            one folder per minigame, each its own repo (submodule)
     bowling/            Bowling your Friends: Cosmic Lanes, Sunset Lanes, their props, bowling tests
     sumo/               Sumo Ring
+    hoops/              Dunk your Friends (basketball)
+    soccer/             Goal Rush (soccer)
   assets/               music, fonts (SIL OFL), cosmetics.glb (tools/blender/cosmetics.py), Kenney props and
                         Quaternius's Stylized Nature MegaKit (props/meadow) (both CC0)
   tests/                core tests: party rules, progression, render benchmark
@@ -231,6 +236,8 @@ enough behind to ride out their connection's jitter (55–150 ms, adaptive), int
 godot --headless --path game -s minigames/bowling/tests/test_bowling.gd   # core-loop test
 godot --headless --path game -s minigames/bowling/tests/strike_rate.gd    # map difficulty check (~1 min)
 godot --headless --path game -s minigames/bowling/tests/test_powerups.gd  # power-ups
+godot --headless --path game -s minigames/hoops/tests/test_hoops.gd       # shots, threes, dunks
+godot --headless --path game -s minigames/soccer/tests/test_soccer.gd     # kicks, goals, keepers
 godot --headless --path game -s tests/test_progress.gd                      # progression
 godot --headless --path game -s tests/test_party.gd                         # party rules
 godot --headless --path game -- --host --bots=3 --party=2 --timescale=3 --quit-after=80   # a whole party with bots
